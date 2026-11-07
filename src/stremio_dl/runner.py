@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 from rich.live import Live
 
@@ -12,6 +13,7 @@ from .engine.base import JobView
 from .engine.torrent import NOT_IN_TORRENT, TorrentEngine
 from .models import FileTarget, TorrentJob
 from .planner import Plan, replan
+from .postprocess import hand_off
 from .store import Store
 from .ui import console, progress_table
 
@@ -27,6 +29,7 @@ class DownloadRunner:
         self.job_id = job_id
         self.plan = plan
         self.engine = TorrentEngine(cfg, data_dir() / "staging", listener=self)
+        self.handed_off: list[Path] = []  # files given to cfg.post_download_command
 
     # -- EngineListener --------------------------------------------------------------------
 
@@ -44,6 +47,12 @@ class DownloadRunner:
 
     def on_job_done(self, job: TorrentJob) -> None:
         self.store.update_torrent(self.job_id, job.info_hash, status="done", job=job)
+        # Only now, with the torrent removed from the session: earlier (on_target_done) the
+        # file may still be open for the rest of a season pack or for seeding, and the
+        # post-download command may move it away.
+        for target in job.targets:
+            if hand_off(self.cfg, self.plan.title, target):
+                self.handed_off.append(target.final_path)
 
     def on_job_dead(
         self, job: TorrentJob, reason: str, remaining: list[FileTarget]

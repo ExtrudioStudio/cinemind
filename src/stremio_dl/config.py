@@ -69,6 +69,16 @@ class Config(BaseModel):
     movie_root: str = str(_videos_dir() / "Movies")
     tv_template: str = "{show}/Season {season:02}/{show} - {code} - {title}{ext}"
     movie_template: str = "{title} ({year})/{title} ({year}){ext}"
+    # Other libraries checked for episodes and movies you already have, e.g. the NAS that
+    # finished downloads are moved to. Their folders may carry a year and an id hint:
+    # "Show (1999) {tvdb-81797}/Season 01/...S01E05...mkv", "Movie (2010) {imdb-tt1375666}/".
+    extra_tv_roots: list[str] = []
+    extra_movie_roots: list[str] = []
+
+    # Run once per finished file, after its torrent is complete and closed (empty = off).
+    # Placeholders: {path} {id} (stream id, e.g. tt0388629:1:2) {imdb} {type} {name}
+    # {year} {season} {episode} {root} (the library root the file is in).
+    post_download_command: str = ""
 
     # Stream selection
     default_quality: str = "1080p"

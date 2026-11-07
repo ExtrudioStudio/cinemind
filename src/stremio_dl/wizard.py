@@ -20,6 +20,7 @@ from .library import free_space
 from .metadata import fetch_title
 from .models import Key, MediaType, Title
 from .planner import Plan, build_plan
+from .postprocess import log_folder
 from .runner import DownloadRunner
 from .selection import Selection, SelectionError, parse_selection
 from .store import Store
@@ -256,7 +257,7 @@ async def download(cfg: Config, plan: Plan) -> str:
         console.print(f"[dim]Job #{job_id} · Ctrl+C pauses; `sdl resume` continues.[/]")
         runner = DownloadRunner(cfg, store, job_id, plan)
         status = await runner.run(store.open_torrents(job_id))
-        report(store, job_id, status)
+        report(store, job_id, status, runner)
         return status
     finally:
         store.close()
@@ -280,12 +281,12 @@ async def resume(cfg: Config, job_id: int | None = None) -> None:
             store.set_job_status(row.id, "running")
             runner = DownloadRunner(cfg, store, row.id, store.load_plan(row.id))
             status = await runner.run(torrents)
-            report(store, row.id, status)
+            report(store, row.id, status, runner)
     finally:
         store.close()
 
 
-def report(store: Store, job_id: int, status: str) -> None:
+def report(store: Store, job_id: int, status: str, runner: DownloadRunner | None = None) -> None:
     row = next((r for r in store.jobs() if r.id == job_id), None)
     if row is None:
         return
@@ -293,6 +294,12 @@ def report(store: Store, job_id: int, status: str) -> None:
     failed = row.counts.get("failed", 0)
     color = {"done": "green", "partial": "yellow", "failed": "red"}.get(status, "cyan")
     console.print(f"[{color}]Job #{job_id} {status}[/]: {done} downloaded, {failed} failed.")
+    if runner and runner.handed_off:
+        count = len(runner.handed_off)
+        console.print(
+            f"[cyan]{count} file{'s' if count != 1 else ''} handed to the post-download "
+            f"command[/] [dim](it keeps running in the background; logs: {log_folder()})[/]"
+        )
 
 
 # -- the interactive wizard ------------------------------------------------------------------

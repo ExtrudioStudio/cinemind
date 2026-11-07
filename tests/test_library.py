@@ -4,7 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from stremio_dl.library import MAX_PATH, episode_code, find_existing, sanitize, tv_path
+from stremio_dl.library import (
+    MAX_PATH,
+    ExtraLibraries,
+    episode_code,
+    find_existing,
+    sanitize,
+    tv_path,
+)
 from stremio_dl.models import Episode, EpisodeRef, Title
 
 
@@ -53,3 +60,35 @@ def test_find_existing_matches_episode_codes(tmp_path):
     assert find_existing(target, (EpisodeRef(1, 5),)) == folder / "show.s01e05.720p.mkv"
     assert find_existing(folder / "x.mkv", (EpisodeRef(1, 6),)) is None  # .part isn't finished
     assert find_existing(folder / "x.mkv", (EpisodeRef(1, 50),)) is None
+
+
+def test_extra_libraries_find_episodes_in_plex_style_folders(tmp_path):
+    nas = tmp_path / "NAS"
+    season = nas / "Friends (1994) {tvdb-79168}" / "Season 01"
+    season.mkdir(parents=True)
+    episode = season / "Friends (1994) - S01E03 - The One with the Thumb.mkv"
+    episode.write_bytes(b"x")
+    other = nas / "Friends Again (1994)" / "Season 01"
+    other.mkdir(parents=True)
+    (other / "Friends Again (1994) - S01E04.mkv").write_bytes(b"x")
+
+    extra = ExtraLibraries([str(nas)], Title("tt0108778", "series", "Friends", 1994))
+    assert extra.find((EpisodeRef(1, 3),)) == episode
+    assert extra.find((EpisodeRef(1, 4),)) is None  # another show's folder doesn't count
+    assert extra.find((EpisodeRef(2, 1),)) is None  # no "Season 02" folder
+
+
+def test_extra_libraries_find_movies_by_name_and_year_or_imdb_tag(tmp_path):
+    nas = tmp_path / "Movies"
+    folder = nas / "Inception (2010) {imdb-tt1375666}"
+    folder.mkdir(parents=True)
+    (folder / "Inception (2010).mkv").write_bytes(b"x")
+
+    inception = Title("tt1375666", "movie", "Inception", 2010)
+    assert ExtraLibraries([str(nas)], inception).find(()) == folder / "Inception (2010).mkv"
+    retitled = Title("tt1375666", "movie", "Inception: The IMAX Cut", 2010)
+    assert ExtraLibraries([str(nas)], retitled).find(()) is not None  # by the imdb tag
+    remake = Title("tt0000001", "movie", "Inception", 1999)
+    assert ExtraLibraries([str(nas)], remake).find(()) is None  # same name, other year
+    assert ExtraLibraries([str(tmp_path / "offline")], inception).find(()) is None
+    assert ExtraLibraries([], inception).find(()) is None

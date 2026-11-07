@@ -9,7 +9,7 @@ from typing import Any
 
 from . import quality as q
 from .config import Config
-from .library import find_existing, target_path
+from .library import ExtraLibraries, find_existing, target_path
 from .models import (
     Candidate,
     FileTarget,
@@ -144,10 +144,13 @@ def build_plan(
 ) -> Plan:
     plan = Plan(title, requested, list(keys))
     ranked: dict[Key, list[Candidate]] = {}
+    extra = ExtraLibraries(
+        cfg.extra_movie_roots if title.type == "movie" else cfg.extra_tv_roots, title
+    )
     for key in keys:
         refs = () if key is None else (key,)
         if skip_existing:
-            found = find_existing(target_path(cfg, title, refs, ".mkv"), refs)
+            found = find_existing(target_path(cfg, title, refs, ".mkv"), refs) or extra.find(refs)
             if found:
                 plan.existing[key] = found
                 continue

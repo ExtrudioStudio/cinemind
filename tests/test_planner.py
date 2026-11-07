@@ -74,6 +74,19 @@ def test_missing_and_existing_episodes(friends, cfg):
     assert lower.used_quality[e(1, 2)] == "720p" and not lower.missing
 
 
+def test_episodes_already_on_an_extra_library_are_not_downloaded_again(friends, cfg, tmp_path):
+    season = tmp_path / "NAS" / "Friends {tvdb-79168}" / "Season 01"
+    season.mkdir(parents=True)
+    moved = season / "Friends - S01E02 - The One with the Sonogram at the End.mkv"
+    moved.write_bytes(b"x")
+    cfg.extra_tv_roots = [str(tmp_path / "NAS")]
+    keys = [e(1, 1), e(1, 2)]
+    plan = build_plan(friends, keys, {e(1, 1): [cand("a", 9)], e(1, 2): [cand("c", 9)]},
+                      cfg, "1080p")  # fmt: skip
+    assert plan.existing == {e(1, 2): moved}
+    assert [t.refs for j in plan.jobs for t in j.targets] == [(e(1, 1),)]
+
+
 def test_replan_moves_to_the_next_alive_candidate(friends, cfg):
     keys = [e(1, 1)]
     plan = build_plan(friends, keys, {e(1, 1): [cand("a", 9), cand("c", 5)]}, cfg, "1080p")

@@ -106,7 +106,37 @@ Windows path; use `@4k`, `-q 4k` or plain `4k` there. PowerShell and cmd are fin
 
 Only the wanted files inside a torrent are downloaded. They are written directly to their
 library path as `name.mkv.part` and renamed when complete. Episodes already in the library
-(matched by `SxxEyy`) are skipped.
+(matched by `SxxEyy`) are skipped. That includes the `extra_tv_roots` / `extra_movie_roots`
+folders, such as a NAS that finished files are moved to. Plex-style folder names there
+(`Show (1999) {tvdb-81797}`, `Movie (2010) {imdb-tt1375666}`) are recognised.
+
+## After a download
+
+Set `post_download_command` to run a command for every finished file, for example a script
+that checks it and moves it to a NAS. It starts only after the torrent is complete and
+removed from the session, so nothing still has the file open (a season pack hands over all
+its episodes at the end). It runs in the background, in its own hidden console, so it keeps
+going if you return to the menu or quit. Its output goes to
+`%LOCALAPPDATA%\stremio-dl\Logs\post-download\`.
+
+Placeholders:
+
+| Placeholder | Value |
+|---|---|
+| `{path}` | The finished file |
+| `{id}` | Stremio id: `tt0388629:1:2` for an episode, `tt1375666` for a movie |
+| `{imdb}` | `tt…`, or empty for non-IMDb ids |
+| `{type}` | `movie` or `series` |
+| `{name}`, `{year}`, `{season}`, `{episode}` | Title details |
+| `{root}` | The library root the file is in |
+
+Example (the MediaPipeline NAS ingest, which also adds Hebrew subtitles):
+
+```toml
+post_download_command = 'powershell.exe -NoProfile -Sta -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Users\talta\MediaPipeline\Invoke-PostDownload.ps1" -Path "{path}" -StremioId "{id}" -CleanupRoot "{root}"'
+extra_tv_roots = ['\\10.0.0.28\Media\TV Shows']
+extra_movie_roots = ['\\10.0.0.28\Media\Movies']
+```
 
 ## Settings
 
@@ -116,6 +146,8 @@ library path as `name.mkv.part` and renamed when complete. Episodes already in t
 |---|---|---|
 | `tv_root`, `movie_root` | `Videos\TV Shows`, `Videos\Movies` | Library roots |
 | `tv_template` | `{show}/Season {season:02}/{show} - {code} - {title}{ext}` | Also `{year}`, `{episode}` |
+| `extra_tv_roots`, `extra_movie_roots` | (empty) | Other libraries checked for files you already have |
+| `post_download_command` | (empty) | Run for each finished file (see [After a download](#after-a-download)) |
 | `default_quality` | `1080p` | Used when the selection has no quality |
 | `languages` | `en` | Comma-separated; `any` disables the filter |
 | `stream_addons` | Torrentio | Paste a *configured* manifest URL to keep its options |
@@ -126,13 +158,14 @@ library path as `name.mkv.part` and renamed when complete. Episodes already in t
 ## Development
 
 ```powershell
-uv run pytest                      # 90 tests, offline (recorded responses + a local seeder)
+uv run pytest                      # 97 tests, offline (recorded responses + a local seeder)
 uv run ruff check src tests
 uv run python tools/make_icon.py   # redraw the icon (standard library only)
 ```
 
 Layout: `addons/` (protocol client and cache), `catalog.py`, `metadata.py`, `selection.py`,
 `quality.py`, `streams.py`, `planner.py`, `library.py`, `engine/torrent.py` (libtorrent),
+`postprocess.py` (the post-download command),
 `store.py` (SQLite at `%LOCALAPPDATA%\stremio-dl\state.db`), `runner.py`, `wizard.py`,
 `home.py` (the menu), `shortcut.py`, `cli.py`, `ui.py`.
 
