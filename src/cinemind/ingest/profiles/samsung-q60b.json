@@ -1,0 +1,154 @@
+{
+  "profileName": "Samsung QE50Q60B (2022, Tizen 6.5) via Plex for Samsung - zero video transcode",
+  "device": "Q60B",
+  "brand": "Samsung",
+  "notes": [
+    "Edit this file to tune what Invoke-MediaIngest.ps1 accepts, fixes, or quarantines.",
+    "Codec names are ffprobe codec_name values. Profiles are ffprobe 'profile' strings.",
+    "Video is NEVER re-encoded. Anything whose video is not playable is quarantined."
+  ],
+  "containers": {
+    "direct": [
+      ".mkv",
+      ".mp4",
+      ".m4v"
+    ],
+    "remux": [
+      ".ts",
+      ".m2ts",
+      ".mts",
+      ".mov",
+      ".webm"
+    ],
+    "reject": [
+      ".avi",
+      ".wmv",
+      ".asf",
+      ".flv",
+      ".divx",
+      ".rmvb",
+      ".rm",
+      ".vob",
+      ".mpg",
+      ".mpeg"
+    ]
+  },
+  "video": {
+    "direct": {
+      "hevc": {
+        "profiles": [
+          "Main",
+          "Main 10"
+        ],
+        "maxBitDepth": 10,
+        "maxWidth": 3840,
+        "maxHeight": 2160,
+        "maxFps": 60
+      },
+      "h264": {
+        "profiles": [
+          "Constrained Baseline",
+          "Baseline",
+          "Main",
+          "High"
+        ],
+        "maxBitDepth": 8,
+        "maxWidth": 3840,
+        "maxHeight": 2160,
+        "maxFps": 60,
+        "max4kFps": 30
+      }
+    },
+    "review": [
+      "av1",
+      "vp9"
+    ],
+    "rejectReasons": {
+      "mpeg4": "MPEG-4 Part 2 (XviD/DivX) is not reliably direct-played by Plex on Tizen",
+      "msmpeg4v3": "MS-MPEG4 v3 is not supported on Tizen",
+      "vc1": "VC-1 would require a server video transcode",
+      "wmv3": "WMV3 would require a server video transcode",
+      "mpeg2video": "MPEG-2 would require a server video transcode",
+      "mpeg1video": "MPEG-1 would require a server video transcode",
+      "h263": "H.263 is not supported",
+      "theora": "Theora is not supported"
+    },
+    "dolbyVision": {
+      "rejectProfiles": [
+        5
+      ],
+      "rejectWhenNoCompatibleBaseLayer": true,
+      "note": "Samsung TVs have no Dolby Vision. Profiles 7 and 8.x play their HDR10/SDR base layer; profile 5 has none (wrong colours or forced tone-map transcode)."
+    }
+  },
+  "audio": {
+    "direct": [
+      "aac",
+      "ac3",
+      "eac3",
+      "mp3"
+    ],
+    "aacProfiles": [
+      "LC",
+      "HE-AAC",
+      "HE-AACv2"
+    ],
+    "convert": [
+      "dts",
+      "truehd",
+      "flac",
+      "alac",
+      "opus",
+      "vorbis",
+      "mp2",
+      "wmav2",
+      "wmapro",
+      "pcm_s16le",
+      "pcm_s24le",
+      "pcm_s32le",
+      "pcm_s16be",
+      "pcm_s24be",
+      "pcm_bluray",
+      "pcm_dvd"
+    ],
+    "preferExistingCompatibleTrackSameLanguage": true,
+    "targetMultichannel": {
+      "codec": "eac3",
+      "bitrate": "640k",
+      "channels": 6
+    },
+    "targetStereo": {
+      "codec": "aac",
+      "bitrate": "256k",
+      "channels": 2
+    }
+  },
+  "subtitles": {
+    "direct": [
+      "subrip"
+    ],
+    "convertToSrt": [
+      "ass",
+      "ssa",
+      "mov_text",
+      "webvtt",
+      "text"
+    ],
+    "drop": [
+      "hdmv_pgs_subtitle",
+      "dvd_subtitle",
+      "dvb_subtitle",
+      "xsub",
+      "dvb_teletext"
+    ],
+    "note": "Image subtitles (PGS/VobSub) force Plex to burn them in = video transcode. They are removed; use .srt sidecars instead."
+  },
+  "bitrate": {
+    "warnAboveMbps": 60,
+    "note": "Samsung TV LAN ports are commonly 10/100. Above ~60 Mbps average, use strong 5 GHz Wi-Fi on the TV or expect buffering on peaks."
+  },
+  "output": {
+    "container": "matroska",
+    "extension": ".mkv"
+  }
+}
