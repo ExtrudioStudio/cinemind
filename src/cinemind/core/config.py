@@ -157,6 +157,18 @@ class Config(BaseModel):
     # Says what we are, in the "compatible" form crawlers use, so addon operators can tell us apart.
     user_agent: str = f"Mozilla/5.0 (compatible; cinemind/{__version__}; +{PROJECT_URL})"
 
+    # Plain-language requests (`cinemind ask`, and selections the parser can't read). Needs the
+    # "ai" extra and Anthropic API credentials (ANTHROPIC_API_KEY or `ant auth login`).
+    llm_enabled: bool = True
+    llm_model: str = "claude-opus-5-5"
+    llm_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
+
+    # The MCP server (`cinemind mcp`): limits on what one agent-made plan may download, and how
+    # long a plan stays valid before start_download refuses it.
+    mcp_max_plan_gb: float = 60.0
+    mcp_max_files: int = 60
+    mcp_plan_ttl_minutes: int = 15
+
 
 def load_config(path: Path | None = None) -> Config:
     path = path or config_path()

@@ -20,6 +20,11 @@ dependencies = [
 # BitTorrent downloads (Stremio stream addons). libtorrent has wheels for Windows, macOS and
 # musl Linux (Alpine); without it, cinemind still does direct downloads.
 torrent = ["libtorrent>=2.0.9"]
+# Plain-language requests (`cinemind ask`) through the Claude API.
+ai = ["anthropic>=2.6,<3"]
+# The MCP server (`cinemind mcp`) for AI assistants; plan_request also uses the "ai" extra.
+mcp = ["mcp>=2.2,<3", "anthropic>=2.6,<3"]
+all = ["cinemind[torrent,ai,mcp]"]
 
 [project.scripts]
 cinemind = "cinemind.cli.app:main"
@@ -34,6 +39,8 @@ packages = ["src/cinemind"]
 
 [dependency-groups]
 dev = [
+    "anthropic>=2.6,<3",
+    "mcp>=2.2,<3",
     "mypy>=1.13",
     "pre-commit>=4",
     "pytest>=8",
@@ -82,7 +89,7 @@ branch = true
 
 [tool.coverage.report]
 # Ratchet: raise this as coverage grows (core modules are 86-96%; the interactive UI is not).
-fail_under = 74
+fail_under = 77
 show_missing = true
 skip_covered = true
 exclude_also = ["if TYPE_CHECKING:", 'raise AssertionError\("unreachable"\)']

@@ -1,0 +1,226 @@
+{
+ "job_status": {
+  "description": "Progress of one download job.",
+  "input": {
+   "properties": {
+    "job_id": {
+     "title": "Job Id",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "job_id"
+   ],
+   "title": "job_statusArguments",
+   "type": "object"
+  }
+ },
+ "list_jobs": {
+  "description": "Recent download jobs, newest first.",
+  "input": {
+   "properties": {
+    "active_only": {
+     "default": false,
+     "title": "Active Only",
+     "type": "boolean"
+    }
+   },
+   "title": "list_jobsArguments",
+   "type": "object"
+  }
+ },
+ "pause_job": {
+  "description": "Pause a running or queued job; its progress is kept.",
+  "input": {
+   "properties": {
+    "job_id": {
+     "title": "Job Id",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "job_id"
+   ],
+   "title": "pause_jobArguments",
+   "type": "object"
+  }
+ },
+ "plan_download": {
+  "description": "Plan what to download for a title, without downloading anything.\n\nselection: which episodes, e.g. \"s1\", \"s1e1-5\", \"s2e3, s4e1\", \"all\", or plain words\nsuch as \"the last two seasons\". Leave it empty for a movie.\nquality: e.g. \"1080p\", \"4k\", \"best\". allow_lower_quality: use the next lower quality\nfor episodes that have none at the requested one.\n",
+  "input": {
+   "properties": {
+    "allow_lower_quality": {
+     "default": false,
+     "title": "Allow Lower Quality",
+     "type": "boolean"
+    },
+    "quality": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Quality"
+    },
+    "selection": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Selection"
+    },
+    "title_id": {
+     "title": "Title Id",
+     "type": "string"
+    },
+    "type": {
+     "anyOf": [
+      {
+       "enum": [
+        "movie",
+        "series"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Type"
+    }
+   },
+   "required": [
+    "title_id"
+   ],
+   "title": "plan_downloadArguments",
+   "type": "object"
+  }
+ },
+ "plan_request": {
+  "description": "Plan from a plain-language request, e.g. \"the last two seasons of Severance in 4K\".\nDownloads nothing. Check matched title and alternatives with the user.",
+  "input": {
+   "properties": {
+    "allow_lower_quality": {
+     "default": false,
+     "title": "Allow Lower Quality",
+     "type": "boolean"
+    },
+    "request": {
+     "title": "Request",
+     "type": "string"
+    }
+   },
+   "required": [
+    "request"
+   ],
+   "title": "plan_requestArguments",
+   "type": "object"
+  }
+ },
+ "resume_job": {
+  "description": "Continue a paused job.",
+  "input": {
+   "properties": {
+    "job_id": {
+     "title": "Job Id",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "job_id"
+   ],
+   "title": "resume_jobArguments",
+   "type": "object"
+  }
+ },
+ "search_titles": {
+  "description": "Find movies and TV shows by name. Returns ids for the other tools.",
+  "input": {
+   "properties": {
+    "query": {
+     "title": "Query",
+     "type": "string"
+    },
+    "type": {
+     "anyOf": [
+      {
+       "enum": [
+        "movie",
+        "series"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Type"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "title": "search_titlesArguments",
+   "type": "object"
+  }
+ },
+ "start_download": {
+  "description": "Start a plan the user has agreed to. Needs the plan_id from plan_download or\nplan_request; it works once and expires after a few minutes.",
+  "input": {
+   "properties": {
+    "plan_id": {
+     "title": "Plan Id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "plan_id"
+   ],
+   "title": "start_downloadArguments",
+   "type": "object"
+  }
+ },
+ "title_info": {
+  "description": "Seasons and episode counts of a title (an IMDb id such as tt0063350).",
+  "input": {
+   "properties": {
+    "title_id": {
+     "title": "Title Id",
+     "type": "string"
+    },
+    "type": {
+     "anyOf": [
+      {
+       "enum": [
+        "movie",
+        "series"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Type"
+    }
+   },
+   "required": [
+    "title_id"
+   ],
+   "title": "title_infoArguments",
+   "type": "object"
+  }
+ }
+}
