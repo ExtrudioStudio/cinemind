@@ -13,7 +13,7 @@ from .engine.base import JobView
 from .engine.torrent import NOT_IN_TORRENT, TorrentEngine
 from .models import FileTarget, TorrentJob
 from .planner import Plan, replan
-from .postprocess import hand_off
+from .postprocess import hand_off, new_batch
 from .store import Store
 from .ui import console, progress_table
 
@@ -30,6 +30,8 @@ class DownloadRunner:
         self.plan = plan
         self.engine = TorrentEngine(cfg, data_dir() / "staging", listener=self)
         self.handed_off: list[Path] = []  # files given to cfg.post_download_command
+        self.batch = new_batch("job", job_id)  # this run's files form one batch for that command
+        self.batch_size = sum(len(job.targets) for job in plan.jobs)
 
     # -- EngineListener --------------------------------------------------------------------
 
@@ -51,7 +53,7 @@ class DownloadRunner:
         # file may still be open for the rest of a season pack or for seeding, and the
         # post-download command may move it away.
         for target in job.targets:
-            if hand_off(self.cfg, self.plan.title, target):
+            if hand_off(self.cfg, self.plan.title, target, self.batch, self.batch_size):
                 self.handed_off.append(target.final_path)
 
     def on_job_dead(
@@ -75,6 +77,7 @@ class DownloadRunner:
     # -- running ---------------------------------------------------------------------------
 
     async def run(self, torrents: list[tuple[TorrentJob, bytes | None]]) -> str:
+        self.batch_size = sum(len(job.targets) for job, _ in torrents) or self.batch_size
         for job, resume in torrents:
             self.engine.add_job(job, resume)
         with Live(progress_table([]), console=console, refresh_per_second=4) as live:

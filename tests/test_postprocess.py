@@ -39,6 +39,10 @@ def test_fields_for_an_episode_and_a_movie(cfg, friends):
     movie = postprocess.command_fields(cfg, INCEPTION, target(Path("i.mkv")))
     assert (movie["id"], movie["season"], movie["root"]) == ("tt1375666", "", cfg.movie_root)
 
+    batch = postprocess.command_fields(cfg, INCEPTION, target(Path("i.mkv")), "sdl-job-4-x", 13)
+    assert (batch["batch"], batch["batch_size"]) == ("sdl-job-4-x", "13")
+    assert postprocess.new_batch("job", 4).startswith("sdl-job-4-")
+
     quoted = Title("kitsu:12", "movie", 'The "Best" Movie')
     fields = postprocess.command_fields(cfg, quoted, target(Path("b.mkv")))
     assert fields["imdb"] == "" and fields["name"] == "The 'Best' Movie"
@@ -68,6 +72,48 @@ def test_hand_off_is_off_by_default_and_skips_unfinished_files(cfg, tmp_path):
     assert postprocess.hand_off(cfg, INCEPTION, target(video)) is None  # reported, not raised
 
 
+def test_handoff_command_sends_a_finished_jobs_remaining_files(cfg, friends, tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from stremio_dl import cli
+    from stremio_dl.config import data_dir, save_config
+    from stremio_dl.store import Store
+
+    keys = [EpisodeRef(1, 1), EpisodeRef(1, 2)]
+    pack = [Candidate("b" * 40, i, "1080p", 50, 10, filename=f"S01E0{i + 1}.mkv") for i in (0, 1)]
+    plan = build_plan(friends, keys, {keys[0]: [pack[0]], keys[1]: [pack[1]]}, cfg, "1080p")
+    (job,) = plan.jobs
+    store = Store(data_dir() / "state.db")
+    job_id = store.create_job(plan)
+    store.update_torrent(job_id, job.info_hash, status="done", job=job)
+    store.close()
+    kept = job.targets[0].final_path  # the other episode was already moved away
+    kept.parent.mkdir(parents=True)
+    kept.write_bytes(b"x")
+
+    seen: list[Path] = []
+
+    batches: set[tuple[str, int]] = set()
+
+    def fake_hand_off(c, t, tgt, batch="", batch_size=0) -> bool:
+        if tgt.final_path.is_file():
+            seen.append(tgt.final_path)
+            batches.add((batch.rsplit("-", 2)[0], batch_size))
+            return True
+        return False
+
+    monkeypatch.setattr(postprocess, "hand_off", fake_hand_off)
+    runner_cli = CliRunner()
+    save_config(cfg)  # post_download_command still empty
+    assert runner_cli.invoke(cli.app, ["handoff", str(job_id)]).exit_code == 1
+    cfg.post_download_command = "tool {path}"
+    save_config(cfg)
+    result = runner_cli.invoke(cli.app, ["handoff", str(job_id)])
+    assert result.exit_code == 0 and seen == [kept] and "1 file(s) handed" in result.output
+    assert batches == {(f"sdl-handoff-{job_id}", 1)}  # one batch, sized to the files still there
+    assert runner_cli.invoke(cli.app, ["handoff", "999"]).exit_code == 1
+
+
 class _Store:
     def set_item(self, *args, **kwargs): ...
 
@@ -76,7 +122,14 @@ class _Store:
 
 def test_runner_hands_files_off_only_once_the_torrent_is_done(monkeypatch, cfg, friends):
     seen: list[Path] = []
-    monkeypatch.setattr(runner, "hand_off", lambda c, t, tgt: seen.append(tgt.final_path) or 1)
+    calls: list[tuple[str, int]] = []
+
+    def fake_hand_off(c, t, tgt, batch="", batch_size=0):
+        seen.append(tgt.final_path)
+        calls.append((batch, batch_size))
+        return 1
+
+    monkeypatch.setattr(runner, "hand_off", fake_hand_off)
     keys = [EpisodeRef(1, 1), EpisodeRef(1, 2)]
     pack = [Candidate("b" * 40, i, "1080p", 50, 10, filename=f"S01E0{i + 1}.mkv") for i in (0, 1)]
     plan = build_plan(friends, keys, {keys[0]: [pack[0]], keys[1]: [pack[1]]}, cfg, "1080p")
@@ -87,3 +140,4 @@ def test_runner_hands_files_off_only_once_the_torrent_is_done(monkeypatch, cfg, 
     assert seen == []  # the rest of the pack is still downloading from this torrent
     run.on_job_done(job)
     assert seen == [t.final_path for t in job.targets] == run.handed_off
+    assert len(set(calls)) == 1 and calls[0][0].startswith("sdl-job-1-") and calls[0][1] == 2

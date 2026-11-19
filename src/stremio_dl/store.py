@@ -243,6 +243,12 @@ class Store:
         ).fetchall()
         return [(TorrentJob.from_dict(json.loads(r["job_json"])), r["resume"]) for r in rows]
 
+    def finished_torrents(self, job_id: int) -> list[TorrentJob]:
+        rows = self.db.execute(
+            "SELECT job_json FROM torrents WHERE job_id = ? AND status = 'done'", (job_id,)
+        ).fetchall()
+        return [TorrentJob.from_dict(json.loads(r["job_json"])) for r in rows]
+
     def pause_open(self, job_id: int) -> None:
         with self.db:
             self.db.execute(

@@ -66,6 +66,7 @@ Other commands:
 | `sdl info tt0108778` | Seasons, episode counts and sampled resolutions |
 | `sdl status` | Download jobs and their progress |
 | `sdl resume [JOB]` | Continue paused/interrupted jobs (Ctrl+C pauses) |
+| `sdl handoff JOB` | Run `post_download_command` for a finished job's files still in the library |
 | `sdl shortcut` | Create the desktop (and Start menu) icon |
 | `sdl config show` / `set KEY VALUE` / `reset` / `path` | Settings |
 
@@ -129,11 +130,12 @@ Placeholders:
 | `{type}` | `movie` or `series` |
 | `{name}`, `{year}`, `{season}`, `{episode}` | Title details |
 | `{root}` | The library root the file is in |
+| `{batch}`, `{batch_size}` | This run's batch id (e.g. `sdl-job-4-20261107-150212`) and its number of files |
 
 Example (the MediaPipeline NAS ingest, which also adds Hebrew subtitles):
 
 ```toml
-post_download_command = 'powershell.exe -NoProfile -Sta -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Users\talta\MediaPipeline\Invoke-PostDownload.ps1" -Path "{path}" -StremioId "{id}" -CleanupRoot "{root}"'
+post_download_command = 'powershell.exe -NoProfile -Sta -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Users\talta\MediaPipeline\Invoke-PostDownload.ps1" -Path "{path}" -StremioId "{id}" -CleanupRoot "{root}" -BatchId "{batch}" -BatchSize "{batch_size}"'
 extra_tv_roots = ['\\10.0.0.28\Media\TV Shows']
 extra_movie_roots = ['\\10.0.0.28\Media\Movies']
 ```
@@ -158,7 +160,7 @@ extra_movie_roots = ['\\10.0.0.28\Media\Movies']
 ## Development
 
 ```powershell
-uv run pytest                      # 97 tests, offline (recorded responses + a local seeder)
+uv run pytest                      # 98 tests, offline (recorded responses + a local seeder)
 uv run ruff check src tests
 uv run python tools/make_icon.py   # redraw the icon (standard library only)
 ```

@@ -16,6 +16,7 @@ from .addons.client import AddonError
 from .catalog import search
 from .config import Config, config_path, data_dir, load_config, log_dir, save_config, set_value
 from .home import run_home
+from .postprocess import hand_off_job, log_folder, new_batch
 from .quality import parse_quality
 from .selection import SelectionError, parse_selection, split_spec
 from .shortcut import create_shortcuts
@@ -210,6 +211,36 @@ def resume_cmd(
 ) -> None:
     """Continue paused or interrupted downloads."""
     _run(resume(_cfg(), job_id))
+
+
+@app.command("handoff")
+def handoff_cmd(
+    job_id: Annotated[int, typer.Argument(help="Job number (see `sdl status`).")],
+) -> None:
+    """Run post_download_command for a job's finished files that are still in the library."""
+    cfg = _cfg()
+    if not cfg.post_download_command.strip():
+        console.print(f"[red]post_download_command is not set[/] in {config_path()}.")
+        raise typer.Exit(1)
+    store = Store(data_dir() / "state.db")
+    try:
+        plan = store.load_plan(job_id)
+        torrents = store.finished_torrents(job_id)
+    except KeyError as exc:
+        console.print(f"[red]{exc.args[0]}[/]")
+        raise typer.Exit(1) from None
+    finally:
+        store.close()
+    started = hand_off_job(cfg, plan.title, torrents, new_batch("handoff", job_id))
+    if not started:
+        console.print(
+            f"Nothing to hand off: job #{job_id} has no finished files left in the library."
+        )
+        return
+    for path in started:
+        console.print(f"  {path.name}")
+    console.print(f"[cyan]{len(started)} file(s) handed to the post-download command[/] "
+                  f"[dim](logs: {log_folder()})[/]")  # fmt: skip
 
 
 @app.command("shortcut")
