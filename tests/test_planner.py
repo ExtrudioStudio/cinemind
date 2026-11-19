@@ -31,7 +31,7 @@ def test_episodes_from_one_pack_become_one_torrent(friends: Title, cfg):
     assert [t.refs for t in job.targets] == [(e(1, 1),), (e(1, 2),)]
     first = job.targets[0].final_path
     assert first == Path(cfg.tv_root) / "Friends" / "Season 01" / (
-        "Friends - S01E01 - The One Where Monica Gets a Roommate.mkv"
+        "Friends - S01E01 - The One Where Monica Gets A Roommate.mkv"
     )
     assert job.targets[1].final_path.suffix == ".mp4"
 

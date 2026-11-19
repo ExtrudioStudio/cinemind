@@ -19,6 +19,7 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
+from ..aio import reraise_cancelled
 from ..config import Config
 from .cache import JsonCache
 
@@ -128,7 +129,7 @@ class AddonClient:
     async def get_json(self, url: str, ttl: float, missing_ok: bool = False) -> dict[str, Any]:
         if self.cache is not None:
             cached = self.cache.get(url, ttl)
-            if cached is not None:
+            if isinstance(cached, dict):
                 return cached
         data = await self._fetch(url, missing_ok)
         if self.cache is not None and data:
@@ -138,7 +139,7 @@ class AddonClient:
     async def _fetch(self, url: str, missing_ok: bool) -> dict[str, Any]:
         retrying = AsyncRetrying(
             retry=retry_if_exception_type((_Retryable, httpx.TransportError)),
-            wait=wait_exponential_jitter(initial=self._retry_wait, max=20 * self._retry_wait),
+            wait=wait_exponential_jitter(multiplier=self._retry_wait, max=20 * self._retry_wait),
             stop=stop_after_attempt(4),
             reraise=True,
         )
@@ -161,9 +162,12 @@ class AddonClient:
                     if resp.status_code >= 400:
                         raise AddonError(f"HTTP {resp.status_code} from {url}")
                     try:
-                        return resp.json()
+                        data = resp.json()
                     except ValueError as exc:
                         raise AddonError(f"{url} did not return JSON") from exc
+                    if not isinstance(data, dict):
+                        raise AddonError(f"{url} returned JSON that is not an object")
+                    return data
         except _Retryable as exc:
             raise AddonError(f"{exc} (gave up after retries)") from exc
         except httpx.TransportError as exc:
@@ -180,7 +184,8 @@ class AddonClient:
     async def load_all(self, urls: list[str]) -> list[Addon]:
         results = await asyncio.gather(*(self.load(u) for u in urls), return_exceptions=True)
         addons = []
-        for url, result in zip(urls, results, strict=True):
+        for url, raw in zip(urls, results, strict=True):
+            result = reraise_cancelled(raw)
             if isinstance(result, Exception):
                 log.warning("Skipping addon %s: %s", url, result)
             else:
@@ -195,16 +200,23 @@ class AddonClient:
         extra = "search=" + quote(query, safe="")
         url = addon.resource_url("catalog", type_, catalog_id, extra)
         data = await self.get_json(url, TTL_CATALOG, missing_ok=True)
-        return data.get("metas") or []
+        return _objects(data.get("metas"))
 
     async def meta(self, addon: Addon, type_: str, id_: str) -> dict[str, Any]:
         data = await self.get_json(addon.resource_url("meta", type_, id_), TTL_META)
         meta = data.get("meta")
-        if not meta:
+        if not meta or not isinstance(meta, dict):
             raise AddonError(f"{addon.name} has no metadata for {id_}")
         return meta
 
     async def streams(self, addon: Addon, type_: str, id_: str) -> list[dict[str, Any]]:
         url = addon.resource_url("stream", type_, id_)
         data = await self.get_json(url, TTL_STREAMS, missing_ok=True)
-        return data.get("streams") or []
+        return _objects(data.get("streams"))
+
+
+def _objects(value: Any) -> list[dict[str, Any]]:
+    """The JSON objects in an addon's list field; anything else (a bad addon) is skipped."""
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]

@@ -141,9 +141,9 @@ class _Expander:
         assert p.season is not None
         self.current_season = p.season
         if p.episode is None:
-            idx = self._check_season(p.season, p.raw)
+            season_idx = self._check_season(p.season, p.raw)
             self.last_kind = "season"
-            return "season", idx[0], idx[-1]
+            return "season", season_idx[0], season_idx[-1]
         idx = self._check_episode(EpisodeRef(p.season, p.episode), p.raw)
         self.last_kind = "episode"
         return "episode", idx, idx

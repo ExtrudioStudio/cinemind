@@ -1,0 +1,152 @@
+{
+    "id":  "real-7771c6674f8f",
+    "kind":  "real",
+    "note":  "",
+    "extension":  ".mkv",
+    "probe":  {
+                  "programs":  [
+
+                               ],
+                  "stream_groups":  [
+
+                                    ],
+                  "streams":  [
+                                  {
+                                      "index":  0,
+                                      "codec_name":  "hevc",
+                                      "profile":  "Main 10",
+                                      "codec_type":  "video",
+                                      "width":  3832,
+                                      "height":  1600,
+                                      "pix_fmt":  "yuv420p10le",
+                                      "color_transfer":  "smpte2084",
+                                      "r_frame_rate":  "24000/1001",
+                                      "avg_frame_rate":  "24000/1001",
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               },
+                                      "side_data_list":  [
+                                                             {
+                                                                 "side_data_type":  "DOVI configuration record",
+                                                                 "dv_profile":  8,
+                                                                 "dv_bl_signal_compatibility_id":  1
+                                                             }
+                                                         ]
+                                  },
+                                  {
+                                      "index":  1,
+                                      "codec_name":  "ac3",
+                                      "codec_type":  "audio",
+                                      "channels":  6,
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "fre"
+                                               }
+                                  },
+                                  {
+                                      "index":  2,
+                                      "codec_name":  "eac3",
+                                      "profile":  "Dolby Digital Plus + Dolby Atmos",
+                                      "codec_type":  "audio",
+                                      "channels":  6,
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "eng"
+                                               }
+                                  },
+                                  {
+                                      "index":  3,
+                                      "codec_name":  "subrip",
+                                      "codec_type":  "subtitle",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  1,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "fre"
+                                               }
+                                  },
+                                  {
+                                      "index":  4,
+                                      "codec_name":  "subrip",
+                                      "codec_type":  "subtitle",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "fre"
+                                               }
+                                  },
+                                  {
+                                      "index":  5,
+                                      "codec_name":  "subrip",
+                                      "codec_type":  "subtitle",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "eng"
+                                               }
+                                  }
+                              ],
+                  "format":  {
+                                 "format_name":  "matroska,webm",
+                                 "duration":  "8700.650000",
+                                 "bit_rate":  "9146795"
+                             }
+              },
+    "expected":  {
+                     "verdict":  "COMPLIANT",
+                     "reasons":  [
+
+                                 ],
+                     "actions":  [
+
+                                 ],
+                     "warnings":  [
+                                      "Dolby Vision profile 8: the TV plays the HDR10/SDR base layer (no DV on Samsung)"
+                                  ],
+                     "video":  {
+                                   "index":  0,
+                                   "codec":  "hevc",
+                                   "profile":  "Main 10",
+                                   "width":  3832,
+                                   "height":  1600,
+                                   "fps":  23.976,
+                                   "bitDepth":  10,
+                                   "hdr":  "HDR10 (PQ)",
+                                   "dolbyVision":  "profile 8, base-layer compat 1"
+                               },
+                     "bitrateMbps":  9.1,
+                     "durationSec":  8700.65,
+                     "fixArgs":  null
+                 }
+}

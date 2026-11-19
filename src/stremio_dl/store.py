@@ -96,7 +96,8 @@ class Store:
                     json.dumps(plan.to_dict()),
                 ),  # fmt: skip
             )
-            job_id = int(cur.lastrowid)
+            assert cur.lastrowid is not None  # always set after a successful INSERT
+            job_id = cur.lastrowid
             for key in plan.keys:
                 if key in plan.existing:
                     self.set_item(job_id, key, "skipped", path=str(plan.existing[key]))
@@ -217,7 +218,8 @@ class Store:
         resume: bytes | None = None,
         error: str | None = None,
     ) -> None:
-        sets, args = ["updated = ?"], [_now()]
+        sets: list[str] = ["updated = ?"]
+        args: list[str | bytes] = [_now()]
         if status is not None:
             sets.append("status = ?")
             args.append(status)

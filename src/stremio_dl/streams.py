@@ -22,6 +22,7 @@ from typing import Any
 
 from . import quality as q
 from .addons.client import Addon, AddonClient
+from .aio import reraise_cancelled
 from .config import Config
 from .models import Candidate, EpisodeRef, Key, Title
 
@@ -136,7 +137,7 @@ def normalize_stream(stream: dict[str, Any], addon: str = "") -> Candidate | Non
     seeders_m = _SEEDERS.search(stats)
     source_m = _SOURCE.search(stats)
     raw_idx = stream.get("fileIdx")
-    file_idx = int(raw_idx) if str(raw_idx).isdigit() else None
+    file_idx = int(raw_idx) if raw_idx is not None and str(raw_idx).isdigit() else None
     hdr = tuple(t for t in re.split(r"[\s|]+", label) if t.upper() in {"DV", "HDR", "HDR10+"})
 
     return Candidate(
@@ -219,7 +220,8 @@ class StreamResolver:
             return_exceptions=True,
         )
         found: list[Candidate] = []
-        for addon, streams in zip(addons, results, strict=True):
+        for addon, raw in zip(addons, results, strict=True):
+            streams = reraise_cancelled(raw)
             if isinstance(streams, Exception):
                 log.warning("Streams failed on %s for %s: %s", addon.name, stream_id, streams)
                 continue

@@ -1,0 +1,98 @@
+{
+    "id":  "real-47f0d6fae2fb",
+    "kind":  "real",
+    "note":  "",
+    "extension":  ".mkv",
+    "probe":  {
+                  "programs":  [
+
+                               ],
+                  "stream_groups":  [
+
+                                    ],
+                  "streams":  [
+                                  {
+                                      "index":  0,
+                                      "codec_name":  "h264",
+                                      "profile":  "High",
+                                      "codec_type":  "video",
+                                      "width":  1920,
+                                      "height":  1080,
+                                      "pix_fmt":  "yuv420p",
+                                      "color_transfer":  "bt709",
+                                      "r_frame_rate":  "24000/1001",
+                                      "avg_frame_rate":  "24000/1001",
+                                      "bits_per_raw_sample":  "8",
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  1,
+                                      "codec_name":  "eac3",
+                                      "codec_type":  "audio",
+                                      "channels":  6,
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "eng"
+                                               }
+                                  },
+                                  {
+                                      "index":  2,
+                                      "codec_name":  "subrip",
+                                      "codec_type":  "subtitle",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "eng"
+                                               }
+                                  }
+                              ],
+                  "format":  {
+                                 "format_name":  "matroska,webm",
+                                 "duration":  "1365.472000",
+                                 "bit_rate":  "4775632"
+                             }
+              },
+    "expected":  {
+                     "verdict":  "COMPLIANT",
+                     "reasons":  [
+
+                                 ],
+                     "actions":  [
+
+                                 ],
+                     "warnings":  [
+
+                                  ],
+                     "video":  {
+                                   "index":  0,
+                                   "codec":  "h264",
+                                   "profile":  "High",
+                                   "width":  1920,
+                                   "height":  1080,
+                                   "fps":  23.976,
+                                   "bitDepth":  8,
+                                   "hdr":  "SDR"
+                               },
+                     "bitrateMbps":  4.8,
+                     "durationSec":  1365.472,
+                     "fixArgs":  null
+                 }
+}
