@@ -10,13 +10,14 @@ from pathlib import Path
 
 import pytest
 
-from stremio_dl import hookrun, library, postprocess
-from stremio_dl.config import Config
-from stremio_dl.engine.torrent import TorrentEngine
-from stremio_dl.models import Candidate, EpisodeRef, FileTarget, Title
-from stremio_dl.planner import build_plan
-from stremio_dl.runner import DownloadRunner
-from stremio_dl.store import SCHEMA_V1, SCHEMA_VERSION, Store
+from cinemind.core.config import Config
+from cinemind.core.models import Candidate, EpisodeRef, FileTarget, Title
+from cinemind.core.store import SCHEMA_V1, SCHEMA_VERSION, Store
+from cinemind.engines.torrent import TorrentEngine
+from cinemind.pipeline import hookrun, postprocess
+from cinemind.pipeline.runner import DownloadRunner
+from cinemind.planning import library
+from cinemind.planning.planner import build_plan
 
 from .test_engine import LOCAL, Recorder, _job, seeder  # noqa: F401  (seeder is a fixture)
 
@@ -143,7 +144,7 @@ def test_awkward_values_stay_single_arguments_and_are_in_the_environment(tmp_pat
     script = tmp_path / "record.py"
     script.write_text(
         "import json, os, sys\n"
-        "env = {k: v for k, v in os.environ.items() if k.startswith('SDL_')}\n"
+        "env = {k: v for k, v in os.environ.items() if k.startswith('CINEMIND_')}\n"
         "json.dump({'argv': sys.argv[1:], 'env': env}, open(sys.argv[1], 'w', encoding='utf-8'))\n",
         encoding="utf-8",
     )
@@ -160,8 +161,8 @@ def test_awkward_values_stay_single_arguments_and_are_in_the_environment(tmp_pat
     assert proc is not None and proc.wait(timeout=60) == 0
     seen = json.loads(out.read_text(encoding="utf-8"))
     assert seen["argv"][1:] == [title.name, cfg.movie_root, "tt0000001"]  # 3 args, verbatim
-    assert seen["env"]["SDL_NAME"] == title.name and seen["env"]["SDL_PATH"] == str(video)
-    assert seen["env"]["SDL_TYPE"] == "movie"
+    assert seen["env"]["CINEMIND_NAME"] == title.name and seen["env"]["CINEMIND_PATH"] == str(video)
+    assert seen["env"]["CINEMIND_TYPE"] == "movie"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows command lines can't be unbalanced")
@@ -270,7 +271,7 @@ def test_runner_marks_a_failed_target_and_the_job_fails(tmp_path, cfg, friends):
 
 def test_user_agent_names_the_app_honestly():
     ua = Config().user_agent
-    assert "stremio-dl/" in ua and "github.com" in ua and "Windows NT" not in ua
+    assert "cinemind/" in ua and "github.com" in ua and "Windows NT" not in ua
 
 
 def test_paths_cannot_leave_the_library_root(cfg, friends, monkeypatch):

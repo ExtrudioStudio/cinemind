@@ -19,9 +19,9 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from ..aio import reraise_cancelled
-from ..config import Config
-from .cache import JsonCache
+from cinemind.core.aio import reraise_cancelled
+from cinemind.core.config import Config
+from cinemind.sources.stremio.cache import JsonCache
 
 log = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ class AddonClient:
                         raise AddonError(
                             f"{url} refused the request (HTTP 403). The addon may be blocking "
                             "automated clients or your region; try again later or configure a "
-                            "different stream addon with `sdl config set stream_addons ...`."
+                            "different stream addon with `cinemind config set stream_addons ...`."
                         )
                     if resp.status_code >= 400:
                         raise AddonError(f"HTTP {resp.status_code} from {url}")

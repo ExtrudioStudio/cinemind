@@ -7,9 +7,9 @@ import shutil
 import unicodedata
 from pathlib import Path
 
-from .config import Config
-from .models import EpisodeRef, Title
-from .streams import VIDEO_EXTS
+from cinemind.core.config import Config
+from cinemind.core.models import EpisodeRef, Title
+from cinemind.planning.streams import VIDEO_EXTS
 
 MAX_PATH = 240  # stay under Windows' 260-character MAX_PATH with room for ".part"
 _INVALID = re.compile(r'[<>"/\\|?*\x00-\x1f]')

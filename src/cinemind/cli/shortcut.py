@@ -1,4 +1,4 @@
-"""Windows desktop and Start menu shortcuts that open the stremio-dl home menu."""
+"""Windows desktop and Start menu shortcuts that open the cinemind home menu."""
 
 from __future__ import annotations
 
@@ -10,10 +10,10 @@ from collections.abc import Callable
 from importlib import resources
 from pathlib import Path
 
-from .config import data_dir
+from cinemind.core.config import data_dir
 
-SHORTCUT_NAME = "stremio-dl"
-ICON_NAME = "stremio-dl.ico"
+SHORTCUT_NAME = "cinemind"
+ICON_NAME = "cinemind.ico"
 
 # Values come in through environment variables so paths never need PowerShell quoting.
 _POWERSHELL = r"""
@@ -21,13 +21,13 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $shell = New-Object -ComObject WScript.Shell
 $folders = @([Environment]::GetFolderPath('Desktop'))
-if ($env:SDL_START_MENU -eq '1') { $folders += [Environment]::GetFolderPath('Programs') }
+if ($env:CINEMIND_START_MENU -eq '1') { $folders += [Environment]::GetFolderPath('Programs') }
 foreach ($folder in $folders) {
-    $path = Join-Path $folder ($env:SDL_NAME + '.lnk')
+    $path = Join-Path $folder ($env:CINEMIND_NAME + '.lnk')
     $link = $shell.CreateShortcut($path)
-    $link.TargetPath = $env:SDL_TARGET
-    $link.WorkingDirectory = $env:SDL_WORKDIR
-    $link.IconLocation = $env:SDL_ICON + ',0'
+    $link.TargetPath = $env:CINEMIND_TARGET
+    $link.WorkingDirectory = $env:CINEMIND_WORKDIR
+    $link.IconLocation = $env:CINEMIND_ICON + ',0'
     $link.Description = 'Download movies and TV shows through Stremio addons'
     $link.Save()
     Write-Output $path
@@ -36,21 +36,21 @@ foreach ($folder in $folders) {
 
 
 def launcher() -> Path:
-    """The ``sdl.exe`` of the environment this code is running from."""
-    exe = Path(sys.executable).with_name("sdl.exe")
+    """The ``cinemind.exe`` of the environment this code is running from."""
+    exe = Path(sys.executable).with_name("cinemind.exe")
     if exe.exists():
         return exe
-    found = shutil.which("sdl")
+    found = shutil.which("cinemind")
     if found:
         return Path(found)
-    raise RuntimeError("Can't find sdl.exe; run this from an installed stremio-dl.")
+    raise RuntimeError("Can't find cinemind.exe; run this from an installed cinemind.")
 
 
 def install_icon() -> Path:
     """Copy the icon next to the app data so the shortcut survives reinstalls."""
     dest = data_dir() / ICON_NAME
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes((resources.files("stremio_dl") / "assets" / ICON_NAME).read_bytes())
+    dest.write_bytes((resources.files("cinemind") / "assets" / ICON_NAME).read_bytes())
     return dest
 
 
@@ -61,11 +61,11 @@ def create_shortcuts(
         raise RuntimeError("Shortcuts are only supported on Windows.")
     env = {
         **os.environ,
-        "SDL_NAME": SHORTCUT_NAME,
-        "SDL_TARGET": str(launcher()),
-        "SDL_WORKDIR": str(Path.home()),
-        "SDL_ICON": str(install_icon()),
-        "SDL_START_MENU": "1" if start_menu else "0",
+        "CINEMIND_NAME": SHORTCUT_NAME,
+        "CINEMIND_TARGET": str(launcher()),
+        "CINEMIND_WORKDIR": str(Path.home()),
+        "CINEMIND_ICON": str(install_icon()),
+        "CINEMIND_START_MENU": "1" if start_menu else "0",
     }
     result = run(
         ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _POWERSHELL],

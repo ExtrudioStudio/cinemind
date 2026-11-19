@@ -10,9 +10,9 @@ from pathlib import Path
 import libtorrent as lt
 import pytest
 
-from stremio_dl.config import Config
-from stremio_dl.engine.torrent import TorrentEngine
-from stremio_dl.models import Candidate, EpisodeRef, FileTarget, TorrentJob
+from cinemind.core.config import Config
+from cinemind.core.models import Candidate, EpisodeRef, FileTarget, TorrentJob
+from cinemind.engines.torrent import TorrentEngine
 
 pytestmark = pytest.mark.torrent
 

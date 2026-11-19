@@ -9,14 +9,14 @@ from pathlib import Path
 
 from rich.live import Live
 
-from .config import Config, data_dir
-from .engine.base import JobView
-from .engine.torrent import NOT_IN_TORRENT, TorrentEngine
-from .models import FileTarget, TorrentJob
-from .planner import Plan, replan
-from .postprocess import hand_off, new_batch
-from .store import Store
-from .ui import console, progress_table
+from cinemind.cli.ui import console, progress_table
+from cinemind.core.config import Config, data_dir
+from cinemind.core.models import FileTarget, TorrentJob
+from cinemind.core.store import Store
+from cinemind.engines.base import JobView
+from cinemind.engines.torrent import NOT_IN_TORRENT, TorrentEngine
+from cinemind.pipeline.postprocess import hand_off, new_batch
+from cinemind.planning.planner import Plan, replan
 
 log = logging.getLogger(__name__)
 

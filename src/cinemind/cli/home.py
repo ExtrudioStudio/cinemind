@@ -1,4 +1,4 @@
-"""The home menu: what `sdl` (and the desktop shortcut) opens when run without a command.
+"""The home menu: what `cinemind` (and the desktop shortcut) opens when run without a command.
 
 It loops until the user picks Quit, so a window opened from the shortcut never closes on
 its own after a download, an error or a Ctrl+C.
@@ -17,13 +17,13 @@ import questionary
 import typer
 from rich.rule import Rule
 
-from . import __version__
-from .addons.client import AddonError
-from .config import Config, config_path, data_dir, load_config, log_dir, save_config
-from .selection import SelectionError
-from .store import Store
-from .ui import console, status_table
-from .wizard import Cancelled, resume, wizard
+from cinemind import __version__
+from cinemind.cli.ui import console, status_table
+from cinemind.cli.wizard import Cancelled, resume, wizard
+from cinemind.core.config import Config, config_path, data_dir, load_config, log_dir, save_config
+from cinemind.core.store import Store
+from cinemind.planning.selection import SelectionError
+from cinemind.sources.stremio.client import AddonError
 
 log = logging.getLogger(__name__)
 
@@ -102,8 +102,8 @@ def _act(action: str, cfg: Config) -> None:
 
 
 def run_home() -> None:
-    console.set_window_title("stremio-dl")
-    console.print(Rule(f"[bold]stremio-dl[/] {__version__} · movies and TV through Stremio addons"))
+    console.set_window_title("cinemind")
+    console.print(Rule(f"[bold]cinemind[/] {__version__} · movies and TV through Stremio addons"))
     while True:
         cfg = _load_config()
         action = _menu(_paused_jobs()).ask()  # None on Ctrl+C
@@ -120,5 +120,5 @@ def run_home() -> None:
         except Exception as exc:
             log.exception("Unexpected error in the home menu")
             console.print(f"[red]Something went wrong: {exc}[/]")
-            console.print(f"[dim]Details are in the log: {log_dir() / 'stremio-dl.log'}[/]")
+            console.print(f"[dim]Details are in the log: {log_dir() / 'cinemind.log'}[/]")
         console.print()

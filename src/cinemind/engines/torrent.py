@@ -24,11 +24,11 @@ from urllib.parse import quote
 
 import libtorrent as lt
 
-from .. import __version__
-from ..config import Config
-from ..models import FileTarget, TorrentJob
-from ..streams import VIDEO_EXTS
-from .base import EngineListener, JobView, TargetView
+from cinemind import __version__
+from cinemind.core.config import Config
+from cinemind.core.models import FileTarget, TorrentJob
+from cinemind.engines.base import EngineListener, JobView, TargetView
+from cinemind.planning.streams import VIDEO_EXTS
 
 log = logging.getLogger(__name__)
 
@@ -152,7 +152,7 @@ class TorrentEngine:
 
     def _settings(self) -> dict[str, Any]:
         settings: dict[str, Any] = {
-            "user_agent": f"stremio-dl/{__version__} libtorrent/{lt.__version__}",
+            "user_agent": f"cinemind/{__version__} libtorrent/{lt.__version__}",
             "listen_interfaces": self.cfg.listen_interfaces,
             "enable_dht": True,
             "enable_lsd": True,

@@ -7,10 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from . import quality as q
-from .config import Config
-from .library import ExtraLibraries, find_existing, target_path
-from .models import (
+from cinemind.core.config import Config
+from cinemind.core.models import (
     Candidate,
     FileTarget,
     Key,
@@ -19,7 +17,9 @@ from .models import (
     key_from_json,
     key_to_json,
 )
-from .streams import VIDEO_EXTS, choose
+from cinemind.planning import quality as q
+from cinemind.planning.library import ExtraLibraries, find_existing, target_path
+from cinemind.planning.streams import VIDEO_EXTS, choose
 
 PACK_MIN_EPISODES = 3
 PACK_SEEDER_RATIO = 0.5

@@ -1,8 +1,8 @@
-"""Run one post-download command and record how it ended: ``python -m stremio_dl.hookrun``.
+"""Run one post-download command and record how it ended: ``python -m cinemind.pipeline.hookrun``.
 
-:func:`stremio_dl.postprocess.hand_off` starts this wrapper detached, with its output going to
-the hand-off log. The wrapper runs the real command, waits for it, and writes the exit code to
-the ``handoffs`` table. It keeps going after ``sdl`` itself has quit, so the result is recorded
+:func:`cinemind.pipeline.postprocess.hand_off` starts this wrapper detached, with its output going
+to the hand-off log. The wrapper runs the real command, waits for it, and writes the exit code to
+the ``handoffs`` table. It keeps going after ``cinemind`` itself has quit, so the result is recorded
 either way.
 """
 
@@ -14,7 +14,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from .store import Store
+from cinemind.core.store import Store
 
 NOT_STARTED = 127  # the shell convention for "command not found"
 
@@ -33,7 +33,7 @@ def run(command: list[str]) -> tuple[int | None, str | None]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m stremio_dl.hookrun")
+    parser = argparse.ArgumentParser(prog="python -m cinemind.pipeline.hookrun")
     parser.add_argument("--db", type=Path, help="state.db to record the result in")
     parser.add_argument("--handoff", type=int, help="row id in the handoffs table")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="-- program [args...]")

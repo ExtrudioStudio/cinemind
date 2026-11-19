@@ -4,12 +4,12 @@ import httpx
 import pytest
 import respx
 
-from stremio_dl.addons.cache import JsonCache
-from stremio_dl.addons.client import Addon, AddonClient, AddonError
-from stremio_dl.catalog import search
-from stremio_dl.config import Config
-from stremio_dl.metadata import fetch_title
-from stremio_dl.streams import StreamResolver
+from cinemind.core.config import Config
+from cinemind.planning.streams import StreamResolver
+from cinemind.sources.stremio.cache import JsonCache
+from cinemind.sources.stremio.catalog import search
+from cinemind.sources.stremio.client import Addon, AddonClient, AddonError
+from cinemind.sources.stremio.metadata import fetch_title
 
 from .conftest import load
 

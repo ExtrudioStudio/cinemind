@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from .addons.client import Addon, AddonClient, AddonError
-from .aio import reraise_cancelled
-from .models import MediaType, SearchResult
+from cinemind.core.aio import reraise_cancelled
+from cinemind.core.models import MediaType, SearchResult
+from cinemind.sources.stremio.client import Addon, AddonClient, AddonError
 
 log = logging.getLogger(__name__)
 

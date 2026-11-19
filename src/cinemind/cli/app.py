@@ -1,10 +1,11 @@
-"""Command-line entry point: ``sdl``."""
+"""Command-line entry point: ``cinemind``."""
 
 from __future__ import annotations
 
 import asyncio
 import io
 import logging
+import sqlite3
 import sys
 from collections.abc import Coroutine
 from logging.handlers import RotatingFileHandler
@@ -13,19 +14,11 @@ from typing import Annotated, Any
 import tomli_w
 import typer
 
-from . import __version__
-from .addons.client import AddonError
-from .catalog import search
-from .config import Config, config_path, data_dir, load_config, log_dir, save_config, set_value
-from .home import run_home
-from .models import MediaType
-from .postprocess import hand_off_job, log_folder, new_batch
-from .quality import parse_quality
-from .selection import SelectionError, parse_selection, split_spec
-from .shortcut import create_shortcuts
-from .store import Store
-from .ui import console, plan_table, search_table, selection_line, status_table
-from .wizard import (
+from cinemind import __version__
+from cinemind.cli.home import run_home
+from cinemind.cli.shortcut import create_shortcuts
+from cinemind.cli.ui import console, plan_table, search_table, selection_line, status_table
+from cinemind.cli.wizard import (
     Cancelled,
     ask_selection,
     confirm_plan,
@@ -37,6 +30,23 @@ from .wizard import (
     resume,
     show_overview,
 )
+from cinemind.core.config import (
+    Config,
+    config_path,
+    data_dir,
+    load_config,
+    log_dir,
+    migrate_legacy_files,
+    save_config,
+    set_value,
+)
+from cinemind.core.models import MediaType
+from cinemind.core.store import Store
+from cinemind.pipeline.postprocess import hand_off_job, log_folder, new_batch
+from cinemind.planning.quality import parse_quality
+from cinemind.planning.selection import SelectionError, parse_selection, split_spec
+from cinemind.sources.stremio.catalog import search
+from cinemind.sources.stremio.client import AddonError
 
 app = typer.Typer(
     add_completion=False,
@@ -53,7 +63,7 @@ def _setup_logging(verbose: bool) -> None:
     root.setLevel(logging.DEBUG if verbose else logging.INFO)
     try:
         log_dir().mkdir(parents=True, exist_ok=True)
-        handler = RotatingFileHandler(log_dir() / "stremio-dl.log", maxBytes=2_000_000,
+        handler = RotatingFileHandler(log_dir() / "cinemind.log", maxBytes=2_000_000,
                                       backupCount=3, encoding="utf-8")  # fmt: skip
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         root.addHandler(handler)
@@ -71,7 +81,7 @@ def _run(coro: Coroutine[Any, Any, None]) -> None:
     try:
         asyncio.run(coro)
     except KeyboardInterrupt:
-        console.print("\n[cyan]Paused.[/] Run [bold]sdl resume[/] to continue any downloads.")
+        console.print("\n[cyan]Paused.[/] Run [bold]cinemind resume[/] to continue any downloads.")
         raise typer.Exit(130) from None
     except Cancelled:
         console.print("Cancelled.")
@@ -115,8 +125,16 @@ def main_callback(
     version: Annotated[bool, typer.Option("--version", help="Show the version.")] = False,
 ) -> None:
     if version:
-        console.print(f"stremio-dl {__version__}")
+        console.print(f"cinemind {__version__}")
         raise typer.Exit()
+    try:
+        carried = migrate_legacy_files()
+    except (OSError, sqlite3.Error) as exc:
+        console.print(f"[yellow]Could not copy your stremio-dl settings: {exc}[/]")
+        carried = []
+    if carried:
+        console.print("[cyan]Copied your stremio-dl settings and download history to cinemind:[/] "
+                      + ", ".join(str(p) for p in carried), markup=True)  # fmt: skip
     _setup_logging(verbose)
     if ctx.invoked_subcommand is None:
         run_home()
@@ -240,7 +258,7 @@ def resume_cmd(
 
 @app.command("handoff")
 def handoff_cmd(
-    job_id: Annotated[int, typer.Argument(help="Job number (see `sdl status`).")],
+    job_id: Annotated[int, typer.Argument(help="Job number (see `cinemind status`).")],
 ) -> None:
     """Run post_download_command for a job's finished files that are still in the library."""
     cfg = _cfg()
@@ -275,7 +293,7 @@ def shortcut_cmd(
         bool, typer.Option("--start-menu/--no-start-menu", help="Also add a Start menu entry.")
     ] = True,
 ) -> None:
-    """Put a stremio-dl icon on the desktop (Windows) that opens the home menu."""
+    """Put a cinemind icon on the desktop (Windows) that opens the home menu."""
     try:
         paths = create_shortcuts(start_menu=start_menu)
     except RuntimeError as exc:

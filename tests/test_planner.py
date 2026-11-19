@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from stremio_dl.models import Candidate, EpisodeRef, Title
-from stremio_dl.planner import Plan, build_plan, replan
+from cinemind.core.models import Candidate, EpisodeRef, Title
+from cinemind.planning.planner import Plan, build_plan, replan
 
 PACK = "b" * 40
 

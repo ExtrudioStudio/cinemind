@@ -20,11 +20,11 @@ from functools import lru_cache
 from pathlib import PurePosixPath
 from typing import Any
 
-from . import quality as q
-from .addons.client import Addon, AddonClient
-from .aio import reraise_cancelled
-from .config import Config
-from .models import Candidate, EpisodeRef, Key, Title
+from cinemind.core.aio import reraise_cancelled
+from cinemind.core.config import Config
+from cinemind.core.models import Candidate, EpisodeRef, Key, Title
+from cinemind.planning import quality as q
+from cinemind.sources.stremio.client import Addon, AddonClient
 
 log = logging.getLogger(__name__)
 

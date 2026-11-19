@@ -1,4 +1,4 @@
-"""The search → overview → select → plan → download flow, shared by the wizard and `sdl get`."""
+"""The search → overview → select → plan → download flow (the wizard and `cinemind get`)."""
 
 from __future__ import annotations
 
@@ -13,21 +13,7 @@ from typing import Any
 import questionary
 from rich.status import Status
 
-from . import quality as q
-from .addons.cache import JsonCache
-from .addons.client import Addon, AddonClient
-from .catalog import search
-from .config import Config, cache_dir, data_dir, log_dir
-from .library import free_space
-from .metadata import fetch_title
-from .models import Key, MediaType, Title
-from .planner import Plan, build_plan
-from .postprocess import log_folder
-from .runner import DownloadRunner
-from .selection import Selection, SelectionError, parse_selection
-from .store import Store
-from .streams import StreamResolver
-from .ui import (
+from cinemind.cli.ui import (
     console,
     human_size,
     movie_resolutions,
@@ -36,6 +22,20 @@ from .ui import (
     selection_line,
     title_overview,
 )
+from cinemind.core.config import Config, cache_dir, data_dir, log_dir
+from cinemind.core.models import Key, MediaType, Title
+from cinemind.core.store import Store
+from cinemind.pipeline.postprocess import log_folder
+from cinemind.pipeline.runner import DownloadRunner
+from cinemind.planning import quality as q
+from cinemind.planning.library import free_space
+from cinemind.planning.planner import Plan, build_plan
+from cinemind.planning.selection import Selection, SelectionError, parse_selection
+from cinemind.planning.streams import StreamResolver
+from cinemind.sources.stremio.cache import JsonCache
+from cinemind.sources.stremio.catalog import search
+from cinemind.sources.stremio.client import Addon, AddonClient
+from cinemind.sources.stremio.metadata import fetch_title
 
 SYNTAX_HINT = (
     "Examples: [cyan]s1[/]  ·  [cyan]s1e5[/]  ·  [cyan]s1 eps10 - s2 eps 3[/]  ·  "
@@ -256,7 +256,7 @@ async def download(cfg: Config, plan: Plan) -> str:
     store = Store(data_dir() / "state.db")
     try:
         job_id = store.create_job(plan)
-        console.print(f"[dim]Job #{job_id} · Ctrl+C pauses; `sdl resume` continues.[/]")
+        console.print(f"[dim]Job #{job_id} · Ctrl+C pauses; `cinemind resume` continues.[/]")
         runner = DownloadRunner(cfg, store, job_id, plan)
         status = await runner.run(store.open_torrents(job_id))
         report(store, job_id, status, runner)
@@ -300,7 +300,7 @@ def report(store: Store, job_id: int, status: str, runner: DownloadRunner | None
         count = len(runner.handed_off)
         console.print(
             f"[cyan]{count} file{'s' if count != 1 else ''} handed to the post-download "
-            f"command[/] [dim](it keeps running in the background; `sdl status` shows how it "
+            f"command[/] [dim](it keeps running in the background; `cinemind status` shows how it "
             f"ended; logs: {log_folder()})[/]"
         )
     if runner and runner.engine.listener_errors:
@@ -308,7 +308,7 @@ def report(store: Store, job_id: int, status: str, runner: DownloadRunner | None
         console.print(
             f"[yellow]{count} internal error{'s' if count != 1 else ''} while recording "
             f"progress[/]; the downloads continued. Details are in the log: "
-            f"{log_dir() / 'stremio-dl.log'}"
+            f"{log_dir() / 'cinemind.log'}"
         )
 
 

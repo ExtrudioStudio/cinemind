@@ -4,9 +4,9 @@ import json
 import sys
 from pathlib import Path
 
-from stremio_dl import postprocess, runner
-from stremio_dl.models import Candidate, EpisodeRef, FileTarget, Title
-from stremio_dl.planner import build_plan
+from cinemind.core.models import Candidate, EpisodeRef, FileTarget, Title
+from cinemind.pipeline import postprocess, runner
+from cinemind.planning.planner import build_plan
 
 INCEPTION = Title("tt1375666", "movie", "Inception", 2010)
 
@@ -39,14 +39,16 @@ def test_fields_for_an_episode_and_a_movie(cfg, friends):
     movie = postprocess.command_fields(cfg, INCEPTION, target(Path("i.mkv")))
     assert (movie["id"], movie["season"], movie["root"]) == ("tt1375666", "", cfg.movie_root)
 
-    batch = postprocess.command_fields(cfg, INCEPTION, target(Path("i.mkv")), "sdl-job-4-x", 13)
-    assert (batch["batch"], batch["batch_size"]) == ("sdl-job-4-x", "13")
-    assert postprocess.new_batch("job", 4).startswith("sdl-job-4-")
+    batch = postprocess.command_fields(
+        cfg, INCEPTION, target(Path("i.mkv")), "cinemind-job-4-x", 13
+    )
+    assert (batch["batch"], batch["batch_size"]) == ("cm-job-4-x", "13")
+    assert postprocess.new_batch("job", 4).startswith("cinemind-job-4-")
 
     quoted = Title("kitsu:12", "movie", 'The "Best" Movie')
     fields = postprocess.command_fields(cfg, quoted, target(Path("b.mkv")))
     assert fields["imdb"] == "" and fields["name"] == 'The "Best" Movie'  # kept: argv is safe
-    assert postprocess.command_env(fields)["SDL_NAME"] == 'The "Best" Movie'
+    assert postprocess.command_env(fields)["CINEMIND_NAME"] == 'The "Best" Movie'
 
 
 def test_hand_off_runs_the_command_and_keeps_a_log(cfg, friends, tmp_path):
@@ -76,9 +78,9 @@ def test_hand_off_is_off_by_default_and_skips_unfinished_files(cfg, tmp_path):
 def test_handoff_command_sends_a_finished_jobs_remaining_files(cfg, friends, tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from stremio_dl import cli
-    from stremio_dl.config import data_dir, save_config
-    from stremio_dl.store import Store
+    from cinemind.cli import app as cli
+    from cinemind.core.config import data_dir, save_config
+    from cinemind.core.store import Store
 
     keys = [EpisodeRef(1, 1), EpisodeRef(1, 2)]
     pack = [Candidate("b" * 40, i, "1080p", 50, 10, filename=f"S01E0{i + 1}.mkv") for i in (0, 1)]
@@ -112,7 +114,9 @@ def test_handoff_command_sends_a_finished_jobs_remaining_files(cfg, friends, tmp
     save_config(cfg)
     result = runner_cli.invoke(cli.app, ["handoff", str(job_id)])
     assert result.exit_code == 0 and seen == [kept] and "1 file(s) handed" in result.output
-    assert batches == {(f"sdl-handoff-{job_id}", 1)}  # one batch, sized to the files still there
+    assert batches == {
+        (f"cinemind-handoff-{job_id}", 1)
+    }  # one batch, sized to the files still there
     assert runner_cli.invoke(cli.app, ["handoff", "999"]).exit_code == 1
 
 
@@ -147,7 +151,7 @@ def test_runner_hands_files_off_only_once_the_torrent_is_done(monkeypatch, cfg, 
     assert seen == []  # the rest of the pack is still downloading from this torrent
     run.on_job_done(job)
     assert seen == [t.final_path for t in job.targets] == run.handed_off
-    assert len(set(calls)) == 1 and calls[0][0].startswith("sdl-job-1-") and calls[0][1] == 2
+    assert len(set(calls)) == 1 and calls[0][0].startswith("cinemind-job-1-") and calls[0][1] == 2
     assert len(run._hooks) == 2
     run.reap()  # both wrappers have exited
     assert run._hooks == []

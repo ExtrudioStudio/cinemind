@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from stremio_dl.models import EpisodeRef, Title
-from stremio_dl.quality import lower_than, matches, parse_quality
-from stremio_dl.selection import (
+from cinemind.core.models import EpisodeRef, Title
+from cinemind.planning.quality import lower_than, matches, parse_quality
+from cinemind.planning.selection import (
     SelectionError,
     normalize,
     parse_selection,

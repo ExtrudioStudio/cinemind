@@ -11,12 +11,12 @@ from rich.progress_bar import ProgressBar
 from rich.table import Table
 from rich.text import Text
 
-from . import quality as q
-from .engine.base import JobView
-from .models import SearchResult, Title
-from .planner import Plan
-from .selection import summarize
-from .store import JobRow
+from cinemind.core.models import SearchResult, Title
+from cinemind.core.store import JobRow
+from cinemind.engines.base import JobView
+from cinemind.planning import quality as q
+from cinemind.planning.planner import Plan
+from cinemind.planning.selection import summarize
 
 console = Console(highlight=False)
 

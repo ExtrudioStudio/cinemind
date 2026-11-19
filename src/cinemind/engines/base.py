@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from ..models import FileTarget, TorrentJob
+from cinemind.core.models import FileTarget, TorrentJob
 
 
 @dataclass

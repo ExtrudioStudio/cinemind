@@ -17,8 +17,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .models import EpisodeRef, Title
-from .quality import parse_quality
+from cinemind.core.models import EpisodeRef, Title
+from cinemind.planning.quality import parse_quality
 
 
 class SelectionError(ValueError):

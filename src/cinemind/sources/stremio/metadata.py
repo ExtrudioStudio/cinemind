@@ -6,8 +6,8 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from .addons.client import Addon, AddonClient, AddonError
-from .models import Episode, MediaType, Title
+from cinemind.core.models import Episode, MediaType, Title
+from cinemind.sources.stremio.client import Addon, AddonClient, AddonError
 
 _YEAR = re.compile(r"(\d{4})")
 

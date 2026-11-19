@@ -1,6 +1,6 @@
 """SQLite state: download jobs, per-episode items, per-torrent resume data and hand-offs.
 
-The database is opened in WAL mode so ``sdl status`` (or a post-download hand-off recording
+The database is opened in WAL mode so ``cinemind status`` (or a post-download hand-off recording
 its result) can read and write while a download is running. Writes go through :meth:`Store._tx`,
 which groups nested calls into one transaction, and the schema is versioned with
 ``PRAGMA user_version`` (see :data:`MIGRATIONS`).
@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .models import Key, TorrentJob
-from .planner import Plan
+from cinemind.core.models import Key, TorrentJob
+from cinemind.planning.planner import Plan
 
 # Version 1 is the original schema. Databases created before versioning have user_version 0
 # and these tables already; "IF NOT EXISTS" makes the first migration a no-op for them.
@@ -148,8 +148,8 @@ class Store:
         current = self.schema_version
         if current > SCHEMA_VERSION:
             raise RuntimeError(
-                f"state.db is schema version {current}, newer than this version of stremio-dl "
-                f"understands ({SCHEMA_VERSION}). Upgrade stremio-dl."
+                f"state.db is schema version {current}, newer than this version of cinemind "
+                f"understands ({SCHEMA_VERSION}). Upgrade cinemind."
             )
         for version in range(current + 1, SCHEMA_VERSION + 1):
             # executescript() commits first, so the transaction lives inside the script.

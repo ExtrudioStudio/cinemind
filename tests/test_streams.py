@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from stremio_dl.config import Config
-from stremio_dl.streams import (
+from cinemind.core.config import Config
+from cinemind.planning.streams import (
     choose,
     merge,
     normalize_stream,

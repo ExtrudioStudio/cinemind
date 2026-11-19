@@ -4,10 +4,10 @@ The configured command is split into arguments first, the way the operating syst
 it (``CommandLineToArgvW`` on Windows, POSIX shell rules elsewhere), and only then are the
 ``{placeholders}`` filled in, one argument at a time. A title or path that contains quotes,
 spaces or a trailing backslash therefore stays one argument and can't add new ones. The same
-values are also passed as ``SDL_*`` environment variables.
+values are also passed as ``CINEMIND_*`` environment variables.
 
-The command runs through :mod:`stremio_dl.hookrun`, started detached in its own (hidden)
-console and process group. It keeps running after stremio-dl moves on or quits, never receives
+The command runs through :mod:`cinemind.pipeline.hookrun`, started detached in its own (hidden)
+console and process group. It keeps running after cinemind moves on or quits, never receives
 our Ctrl+C, and records its exit code in the ``handoffs`` table. Its output goes to
 ``<log_dir>/post-download/<time>-<file>.log``.
 """
@@ -22,9 +22,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from .config import Config, log_dir
-from .models import FileTarget, Title, TorrentJob
-from .store import Store, key_name
+from cinemind.core.config import Config, log_dir
+from cinemind.core.models import FileTarget, Title, TorrentJob
+from cinemind.core.store import Store, key_name
 
 log = logging.getLogger(__name__)
 
@@ -54,8 +54,8 @@ def command_fields(
 
 
 def command_env(fields: dict[str, str]) -> dict[str, str]:
-    """The fields as environment variables: ``SDL_PATH``, ``SDL_ID``, ``SDL_BATCH_SIZE``..."""
-    return {f"SDL_{name.upper()}": value for name, value in fields.items()}
+    """The fields as environment variables: ``CINEMIND_PATH``, ``CINEMIND_ID`` and so on."""
+    return {f"CINEMIND_{name.upper()}": value for name, value in fields.items()}
 
 
 if sys.platform == "win32":
@@ -104,8 +104,8 @@ def log_folder() -> Path:
 
 
 def new_batch(kind: str, job_id: int) -> str:
-    """A batch id unique to this run, e.g. ``sdl-job-4-20261107-150212``."""
-    return f"sdl-{kind}-{job_id}-{datetime.now():%Y%m%d-%H%M%S}"
+    """A batch id unique to this run, e.g. ``cinemind-job-4-20261107-150212``."""
+    return f"cinemind-{kind}-{job_id}-{datetime.now():%Y%m%d-%H%M%S}"
 
 
 def hand_off(
@@ -137,7 +137,7 @@ def hand_off(
     folder.mkdir(parents=True, exist_ok=True)
     out = folder / f"{datetime.now():%Y%m%d-%H%M%S}-{target.final_path.stem[:80]}.log"
 
-    wrapper = [sys.executable, "-m", "stremio_dl.hookrun"]
+    wrapper = [sys.executable, "-m", "cinemind.pipeline.hookrun"]
     handoff_id = None
     if store is not None:
         key = key_name(target.refs[0] if target.refs else None)
@@ -164,7 +164,7 @@ def hand_off_job(
     cfg: Config, title: Title, torrents: list[TorrentJob], batch: str,
     store: Store | None = None, job_id: int = 0,
 ) -> list[Path]:  # fmt: skip
-    """Hand off every file of finished torrents that is still in the library (``sdl handoff``)."""
+    """Hand off every finished file that is still in the library (``cinemind handoff``)."""
     present = [t for job in torrents for t in job.targets if t.final_path.is_file()]
     return [
         t.final_path
