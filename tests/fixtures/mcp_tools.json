@@ -46,7 +46,7 @@
   }
  },
  "plan_download": {
-  "description": "Plan what to download for a title, without downloading anything.\n\nselection: which episodes, e.g. \"s1\", \"s1e1-5\", \"s2e3, s4e1\", \"all\", or plain words\nsuch as \"the last two seasons\". Leave it empty for a movie.\nquality: e.g. \"1080p\", \"4k\", \"best\". allow_lower_quality: use the next lower quality\nfor episodes that have none at the requested one.\n",
+  "description": "Plan what to download for a title, without downloading anything.\n\nselection: which episodes, e.g. \"s1\", \"s1e1-5\", \"s2e3, s4e1\", \"all\", or plain words\nsuch as \"the last two seasons\". Leave it empty for a movie.\nquality: e.g. \"1080p\", \"4k\", \"best\". allow_lower_quality: use the next lower quality\nfor episodes that have none at the requested one.",
   "input": {
    "properties": {
     "allow_lower_quality": {

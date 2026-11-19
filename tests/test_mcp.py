@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 from pathlib import Path
@@ -103,10 +104,14 @@ async def test_tool_schemas_match_the_snapshot(app):
     """Changing a tool's inputs changes what agents send: make it a deliberate decision."""
     async with Client(create_server(app=app)) as client:
         tools = (await client.list_tools()).tools
-    current = {t.name: {"description": t.description, "input": t.input_schema}
-               for t in sorted(tools, key=lambda t: t.name)}  # fmt: skip
+    # Python 3.13 strips docstring indentation at compile time, 3.12 keeps it: compare cleaned.
+    current = {
+        t.name: {"description": inspect.cleandoc(t.description or ""), "input": t.input_schema}
+        for t in sorted(tools, key=lambda t: t.name)
+    }
     if os.environ.get("CINEMIND_UPDATE_SNAPSHOTS"):
-        SNAPSHOT.write_text(json.dumps(current, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        text = json.dumps(current, indent=1, sort_keys=True) + "\n"
+        SNAPSHOT.write_text(text, encoding="utf-8", newline="\n")  # LF, as .gitattributes wants
     assert current == json.loads(SNAPSHOT.read_text(encoding="utf-8")), (
         "MCP tool schemas changed; rerun with CINEMIND_UPDATE_SNAPSHOTS=1 if that's intended"
     )
