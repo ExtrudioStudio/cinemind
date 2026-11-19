@@ -14,7 +14,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. sdl get "..." "s1e1 /1080p" --dry-run
+        1. cinemind get "..." "1080p" --dry-run
         2. ...
     validations:
       required: true
@@ -22,7 +22,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: Output of `sdl --version`
+      description: Output of `cinemind --version`
     validations:
       required: true
   - type: input
@@ -37,6 +37,6 @@ body:
     attributes:
       label: Log excerpt
       description: >
-        The relevant lines from stremio-dl.log (`sdl config path` shows where the folders are).
+        The relevant lines from cinemind.log (`cinemind config path` shows where the folders are).
         Remove personal paths and addresses first.
       render: text

@@ -1,0 +1,52 @@
+{
+ "responseHeader": {
+  "status": 0
+ },
+ "response": {
+  "numFound": 6,
+  "start": 0,
+  "docs": [
+   {
+    "downloads": 318927,
+    "identifier": "Night.Of.The.Living.Dead_1080p",
+    "licenseurl": "http://creativecommons.org/licenses/publicdomain/",
+    "title": "Night of the Living Dead",
+    "year": 1968
+   },
+   {
+    "downloads": 307776,
+    "identifier": "night_of_the_living_dead_dvd",
+    "licenseurl": "http://creativecommons.org/licenses/publicdomain/",
+    "title": "Night of the Living Dead",
+    "year": 1968
+   },
+   {
+    "downloads": 139675,
+    "identifier": "Night_Of_The_Living_Dead_raw_HD_WS",
+    "licenseurl": "http://creativecommons.org/publicdomain/mark/1.0/",
+    "title": "Night Of The Living Dead",
+    "year": 1968
+   },
+   {
+    "downloads": 133925,
+    "identifier": "NightOfTheLivingDead-MPEG",
+    "title": "Night Of The Living Dead",
+    "year": 1968
+   },
+   {
+    "downloads": 57171,
+    "identifier": "night_of_the_living_dead_ipod",
+    "licenseurl": "http://creativecommons.org/licenses/publicdomain/",
+    "title": "Night of the Living Dead iPod and Flash video versions",
+    "year": 1968
+   },
+   {
+    "identifier": "night_of_the_living_dead_1990",
+    "title": "Night of the Living Dead",
+    "year": 1990,
+    "downloads": 900000,
+    "licenseurl": "http://creativecommons.org/publicdomain/mark/1.0/"
+   }
+  ]
+ }
+}

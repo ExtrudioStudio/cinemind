@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sqlite3
 import time
 from pathlib import Path
 
-import libtorrent as lt
 import pytest
 
-from stremio_dl.config import Config
-from stremio_dl.engine.torrent import TorrentEngine
-from stremio_dl.models import Candidate, EpisodeRef, FileTarget, TorrentJob
+lt = pytest.importorskip(
+    "libtorrent", reason="BitTorrent support (cinemind[torrent]) not installed"
+)
+
+from cinemind.core.config import Config  # noqa: E402
+from cinemind.core.models import Candidate, EpisodeRef, FileTarget, TorrentJob  # noqa: E402
+from cinemind.engines.torrent import TorrentEngine  # noqa: E402
 
 pytestmark = pytest.mark.torrent
 
@@ -191,3 +195,57 @@ async def test_shutdown_saves_resume_data_and_resume_finishes(tmp_path, seeder):
     await asyncio.wait_for(engine2.run(), 60)
     engine2.shutdown()
     assert (library / "Show" / "Season 01" / "Show - S01E02 - Pilot.mkv").exists()
+
+
+# -- engine fault isolation ------------------------------------------------------------------
+
+
+class Exploding(Recorder):
+    """A listener whose state recording fails, like a locked or full database."""
+
+    def on_metadata(self, job):
+        super().on_metadata(job)
+        raise sqlite3.OperationalError("database is locked")
+
+    def on_target_done(self, job, target):
+        super().on_target_done(job, target)
+        raise OSError("disk full")
+
+
+def _engine_with(tmp_path, listener, **kwargs) -> TorrentEngine:
+    config = Config(metadata_timeout=20, stall_timeout=30)
+    return TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
+                         settings=LOCAL, **kwargs)  # fmt: skip
+
+
+@pytest.mark.torrent
+async def test_a_failing_listener_does_not_stop_the_download(tmp_path, seeder):
+    library_dir = tmp_path / "library"
+    idx = seeder["index"]["Show.S01E02.1080p.WEB.mkv"]
+    rec = Exploding()
+    engine = _engine_with(tmp_path, rec)
+    engine.add_job(_job(seeder, library_dir, 2, idx, "Show.S01E02.1080p.WEB.mkv"))
+    await asyncio.wait_for(engine.run(), 60)
+    engine.shutdown()
+
+    assert (library_dir / "Show" / "Season 01" / "Show - S01E02 - Pilot.mkv").exists()
+    assert rec.jobs_done == [seeder["info_hash"]]  # later callbacks still ran
+    assert [e.split(":")[0] for e in engine.listener_errors] == ["on_metadata", "on_target_done"]
+
+
+@pytest.mark.torrent
+async def test_a_file_that_cannot_be_renamed_is_reported_failed(tmp_path, seeder):
+    library_dir = tmp_path / "library"
+    final = library_dir / "Show" / "Season 01" / "Show - S01E02 - Pilot.mkv"
+    final.mkdir(parents=True)  # a folder where the file should go: the final rename must fail
+    idx = seeder["index"]["Show.S01E02.1080p.WEB.mkv"]
+    rec = Recorder()
+    engine = _engine_with(tmp_path, rec, rename_attempts=2, rename_retry_delay=0.05)
+    engine.add_job(_job(seeder, library_dir, 2, idx, "Show.S01E02.1080p.WEB.mkv"))
+    await asyncio.wait_for(engine.run(), 60)
+    engine.shutdown()
+
+    assert rec.done == [] and [label for label, _ in rec.failed] == ["S01E02"]
+    assert "could not rename" in rec.failed[0][1]
+    (view,) = engine.snapshot()
+    assert view.targets[0].state == "failed"

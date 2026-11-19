@@ -12,7 +12,7 @@ import struct
 import zlib
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parents[1] / "src" / "stremio_dl" / "assets" / "stremio-dl.ico"
+OUT = Path(__file__).resolve().parents[1] / "src" / "cinemind" / "assets" / "cinemind.ico"
 SIZES = (16, 24, 32, 48, 64, 128, 256)
 SAMPLES = 4
 TOP = (138, 92, 246)

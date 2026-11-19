@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import sqlite3
 import sys
@@ -10,15 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from stremio_dl import hookrun, library, postprocess
-from stremio_dl.config import Config
-from stremio_dl.engine.torrent import TorrentEngine
-from stremio_dl.models import Candidate, EpisodeRef, FileTarget, Title
-from stremio_dl.planner import build_plan
-from stremio_dl.runner import DownloadRunner
-from stremio_dl.store import SCHEMA_V1, SCHEMA_VERSION, Store
-
-from .test_engine import LOCAL, Recorder, _job, seeder  # noqa: F401  (seeder is a fixture)
+from cinemind.core.config import Config
+from cinemind.core.models import Candidate, EpisodeRef, FileTarget, Title
+from cinemind.core.store import SCHEMA_V1, SCHEMA_VERSION, Store
+from cinemind.pipeline import hookrun, postprocess
+from cinemind.pipeline.runner import DownloadRunner
+from cinemind.planning import library
+from cinemind.planning.planner import build_plan
 
 INCEPTION = Title("tt1375666", "movie", "Inception", 2010)
 
@@ -143,7 +140,7 @@ def test_awkward_values_stay_single_arguments_and_are_in_the_environment(tmp_pat
     script = tmp_path / "record.py"
     script.write_text(
         "import json, os, sys\n"
-        "env = {k: v for k, v in os.environ.items() if k.startswith('SDL_')}\n"
+        "env = {k: v for k, v in os.environ.items() if k.startswith('CINEMIND_')}\n"
         "json.dump({'argv': sys.argv[1:], 'env': env}, open(sys.argv[1], 'w', encoding='utf-8'))\n",
         encoding="utf-8",
     )
@@ -160,8 +157,8 @@ def test_awkward_values_stay_single_arguments_and_are_in_the_environment(tmp_pat
     assert proc is not None and proc.wait(timeout=60) == 0
     seen = json.loads(out.read_text(encoding="utf-8"))
     assert seen["argv"][1:] == [title.name, cfg.movie_root, "tt0000001"]  # 3 args, verbatim
-    assert seen["env"]["SDL_NAME"] == title.name and seen["env"]["SDL_PATH"] == str(video)
-    assert seen["env"]["SDL_TYPE"] == "movie"
+    assert seen["env"]["CINEMIND_NAME"] == title.name and seen["env"]["CINEMIND_PATH"] == str(video)
+    assert seen["env"]["CINEMIND_TYPE"] == "movie"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows command lines can't be unbalanced")
@@ -197,60 +194,6 @@ def test_wrapper_records_a_command_that_cannot_start(tmp_path, capsys):
     assert "could not start" in capsys.readouterr().out
 
 
-# -- engine fault isolation ------------------------------------------------------------------
-
-
-class Exploding(Recorder):
-    """A listener whose state recording fails, like a locked or full database."""
-
-    def on_metadata(self, job):
-        super().on_metadata(job)
-        raise sqlite3.OperationalError("database is locked")
-
-    def on_target_done(self, job, target):
-        super().on_target_done(job, target)
-        raise OSError("disk full")
-
-
-def _engine(tmp_path, listener, **kwargs) -> TorrentEngine:
-    config = Config(metadata_timeout=20, stall_timeout=30)
-    return TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
-                         settings=LOCAL, **kwargs)  # fmt: skip
-
-
-@pytest.mark.torrent
-async def test_a_failing_listener_does_not_stop_the_download(tmp_path, seeder):  # noqa: F811
-    library_dir = tmp_path / "library"
-    idx = seeder["index"]["Show.S01E02.1080p.WEB.mkv"]
-    rec = Exploding()
-    engine = _engine(tmp_path, rec)
-    engine.add_job(_job(seeder, library_dir, 2, idx, "Show.S01E02.1080p.WEB.mkv"))
-    await asyncio.wait_for(engine.run(), 60)
-    engine.shutdown()
-
-    assert (library_dir / "Show" / "Season 01" / "Show - S01E02 - Pilot.mkv").exists()
-    assert rec.jobs_done == [seeder["info_hash"]]  # later callbacks still ran
-    assert [e.split(":")[0] for e in engine.listener_errors] == ["on_metadata", "on_target_done"]
-
-
-@pytest.mark.torrent
-async def test_a_file_that_cannot_be_renamed_is_reported_failed(tmp_path, seeder):  # noqa: F811
-    library_dir = tmp_path / "library"
-    final = library_dir / "Show" / "Season 01" / "Show - S01E02 - Pilot.mkv"
-    final.mkdir(parents=True)  # a folder where the file should go: the final rename must fail
-    idx = seeder["index"]["Show.S01E02.1080p.WEB.mkv"]
-    rec = Recorder()
-    engine = _engine(tmp_path, rec, rename_attempts=2, rename_retry_delay=0.05)
-    engine.add_job(_job(seeder, library_dir, 2, idx, "Show.S01E02.1080p.WEB.mkv"))
-    await asyncio.wait_for(engine.run(), 60)
-    engine.shutdown()
-
-    assert rec.done == [] and [label for label, _ in rec.failed] == ["S01E02"]
-    assert "could not rename" in rec.failed[0][1]
-    (view,) = engine.snapshot()
-    assert view.targets[0].state == "failed"
-
-
 def test_runner_marks_a_failed_target_and_the_job_fails(tmp_path, cfg, friends):
     store = Store(tmp_path / "state.db")
     plan = _plan(cfg, friends, episodes=(1,))
@@ -270,7 +213,7 @@ def test_runner_marks_a_failed_target_and_the_job_fails(tmp_path, cfg, friends):
 
 def test_user_agent_names_the_app_honestly():
     ua = Config().user_agent
-    assert "stremio-dl/" in ua and "github.com" in ua and "Windows NT" not in ua
+    assert "cinemind/" in ua and "github.com" in ua and "Windows NT" not in ua
 
 
 def test_paths_cannot_leave_the_library_root(cfg, friends, monkeypatch):

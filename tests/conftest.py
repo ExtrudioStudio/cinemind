@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from stremio_dl.config import Config
-from stremio_dl.metadata import parse_meta
-from stremio_dl.models import Title
+from cinemind.core.config import Config
+from cinemind.core.models import Title
+from cinemind.sources.stremio.metadata import parse_meta
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -20,7 +20,7 @@ def load(name: str) -> dict:
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
     """Keep config, cache and state for each test inside its temp folder."""
-    monkeypatch.setenv("SDL_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CINEMIND_HOME", str(tmp_path / "home"))
 
 
 @pytest.fixture

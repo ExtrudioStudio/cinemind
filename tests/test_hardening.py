@@ -9,10 +9,10 @@ import respx
 import typer
 from typer.testing import CliRunner
 
-from stremio_dl import cli
-from stremio_dl.addons.client import Addon, AddonClient, AddonError
-from stremio_dl.aio import reraise_cancelled
-from stremio_dl.config import Config
+from cinemind.cli import app as cli
+from cinemind.core.aio import reraise_cancelled
+from cinemind.core.config import Config
+from cinemind.sources.stremio.client import Addon, AddonClient, AddonError
 
 BASE = "https://addon.example"
 

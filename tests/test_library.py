@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from stremio_dl.library import (
+from cinemind.core.models import Episode, EpisodeRef, Title
+from cinemind.planning.library import (
     MAX_PATH,
     ExtraLibraries,
     episode_code,
@@ -12,7 +13,6 @@ from stremio_dl.library import (
     sanitize,
     tv_path,
 )
-from stremio_dl.models import Episode, EpisodeRef, Title
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,373 @@
+"""Command-line entry point: ``cinemind``."""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import logging
+import sqlite3
+import sys
+from collections.abc import Coroutine
+from logging.handlers import RotatingFileHandler
+from typing import Annotated, Any
+
+import tomli_w
+import typer
+
+from cinemind import __version__
+from cinemind.cli.home import run_home
+from cinemind.cli.shortcut import create_shortcuts
+from cinemind.cli.ui import console, plan_table, search_table, selection_line, status_table
+from cinemind.cli.wizard import (
+    Cancelled,
+    ask_selection,
+    confirm_plan,
+    download,
+    interactive,
+    make_plan,
+    open_session,
+    pick_title,
+    resume,
+    show_overview,
+)
+from cinemind.core.config import (
+    Config,
+    config_path,
+    data_dir,
+    load_config,
+    log_dir,
+    migrate_legacy_files,
+    save_config,
+    set_value,
+)
+from cinemind.core.models import MediaType
+from cinemind.core.store import Store
+from cinemind.pipeline.postprocess import hand_off_job, log_folder, new_batch
+from cinemind.planning.quality import parse_quality
+from cinemind.planning.selection import SelectionError, parse_selection, split_spec
+from cinemind.sources.registry import available
+from cinemind.sources.stremio.catalog import search
+from cinemind.sources.stremio.client import AddonError
+
+app = typer.Typer(
+    add_completion=False,
+    invoke_without_command=True,
+    help="Download movies and TV shows through Stremio addons. Run without a command for the "
+    "home menu.",
+)
+config_app = typer.Typer(help="Show or change settings.", no_args_is_help=True)
+app.add_typer(config_app, name="config")
+
+
+def _setup_logging(verbose: bool) -> None:
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG if verbose else logging.INFO)
+    try:
+        log_dir().mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(log_dir() / "cinemind.log", maxBytes=2_000_000,
+                                      backupCount=3, encoding="utf-8")  # fmt: skip
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        root.addHandler(handler)
+    except OSError:
+        pass
+    if verbose:
+        err = logging.StreamHandler(sys.stderr)
+        err.setLevel(logging.DEBUG)
+        root.addHandler(err)
+    for noisy in ("httpx", "httpcore", "rebulk", "guessit"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+def _run(coro: Coroutine[Any, Any, None]) -> None:
+    try:
+        asyncio.run(coro)
+    except KeyboardInterrupt:
+        console.print("\n[cyan]Paused.[/] Run [bold]cinemind resume[/] to continue any downloads.")
+        raise typer.Exit(130) from None
+    except Cancelled:
+        console.print("Cancelled.")
+        raise typer.Exit(1) from None
+    except (AddonError, SelectionError, ValueError) as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from None
+
+
+_MEDIA_TYPES: dict[str, MediaType] = {
+    "series": "series",
+    "tv": "series",
+    "show": "series",
+    "movie": "movie",
+    "film": "movie",
+}
+
+
+def _media_type(value: str | None) -> MediaType | None:
+    """The ``--type`` option: ``series`` or ``movie`` (``tv``/``show``/``film`` also work)."""
+    if value is None:
+        return None
+    try:
+        return _MEDIA_TYPES[value.strip().lower()]
+    except KeyError:
+        raise typer.BadParameter("use 'series' or 'movie'", param_hint="--type") from None
+
+
+def _cfg() -> Config:
+    try:
+        return load_config()
+    except Exception as exc:
+        console.print(f"[red]Could not read {config_path()}: {exc}[/]")
+        raise typer.Exit(1) from None
+
+
+@app.callback()
+def main_callback(
+    ctx: typer.Context,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Log debug output.")] = False,
+    version: Annotated[bool, typer.Option("--version", help="Show the version.")] = False,
+) -> None:
+    if version:
+        console.print(f"cinemind {__version__}")
+        raise typer.Exit()
+    try:
+        carried = migrate_legacy_files()
+    except (OSError, sqlite3.Error) as exc:
+        console.print(f"[yellow]Could not copy your stremio-dl settings: {exc}[/]")
+        carried = []
+    if carried:
+        console.print("[cyan]Copied your stremio-dl settings and download history to cinemind:[/] "
+                      + ", ".join(str(p) for p in carried), markup=True)  # fmt: skip
+    _setup_logging(verbose)
+    if ctx.invoked_subcommand is None:
+        run_home()
+
+
+@app.command("search")
+def search_cmd(
+    query: Annotated[str, typer.Argument(help="Title to look for.")],
+    type_: Annotated[str | None, typer.Option("--type", "-t", help="series or movie")] = None,
+) -> None:
+    """Search the metadata addons."""
+    media = _media_type(type_)
+
+    async def go() -> None:
+        async with open_session(_cfg()) as sess:
+            types: tuple[MediaType, ...] = (media,) if media else ("series", "movie")
+            results = await search(sess.client, sess.meta_addons, query, types)
+            if results:
+                console.print(search_table(results))
+            else:
+                console.print("Nothing found.")
+
+    _run(go())
+
+
+@app.command("info")
+def info_cmd(
+    query: Annotated[str, typer.Argument(help="Title or IMDb id (tt…).")],
+    type_: Annotated[str | None, typer.Option("--type", "-t", help="series or movie")] = None,
+    sample: Annotated[bool, typer.Option(help="Sample available resolutions.")] = True,
+) -> None:
+    """Show seasons, episode counts and available resolutions."""
+    media = _media_type(type_)
+
+    async def go() -> None:
+        async with open_session(_cfg()) as sess:
+            title = await pick_title(sess, query, media, first=True, prompt=False)
+            if title:
+                await show_overview(sess, title, sample=sample)
+
+    _run(go())
+
+
+@app.command("get")
+def get_cmd(
+    query: Annotated[str, typer.Argument(help="Title or IMDb id (tt…).")],
+    selection: Annotated[
+        str | None,
+        typer.Argument(help='Episodes and quality, e.g. "s1 eps10 - s2 eps 3 /full hd".'),
+    ] = None,
+    quality: Annotated[str | None, typer.Option("--quality", "-q", help="e.g. 4k, 1080p")] = None,
+    type_: Annotated[str | None, typer.Option("--type", "-t", help="series or movie")] = None,
+    first: Annotated[bool, typer.Option("--first", help="Take the top search result.")] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Don't ask for confirmation.")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show the plan only.")] = False,
+    prefer_packs: Annotated[
+        bool | None, typer.Option("--prefer-packs/--no-prefer-packs", help="Favor season packs.")
+    ] = None,
+) -> None:
+    """Find, plan and download in one go."""
+    cfg = _cfg()
+    prompt = interactive() and not yes
+    media = _media_type(type_)
+    if media is None and selection and split_spec(selection)[0]:
+        media = "series"  # "s1e5"-style input only makes sense for a show
+
+    async def go() -> None:
+        async with open_session(cfg) as sess:
+            title = await pick_title(sess, query, media, first=first, prompt=prompt)
+            if title is None:
+                raise typer.Exit(1)
+            text = selection
+            if text is None:
+                if title.type == "series" and not prompt:
+                    raise ValueError('Give an episode selection, e.g. "s1e1-5 /1080p".')
+                if title.type == "series":
+                    await show_overview(sess, title)
+                    picked = await ask_selection(sess, title)
+                else:
+                    picked = parse_selection("", title, cfg.default_quality)
+            else:
+                picked = parse_selection(text, title, cfg.default_quality)
+            if quality:
+                picked.quality = parse_quality(quality)
+            if title.type == "series":
+                console.print(selection_line(picked.refs, picked.quality or cfg.default_quality))
+            plan = await make_plan(sess, title, picked, prompt=prompt, prefer_packs=prefer_packs)
+            if dry_run:
+                console.print(plan_table(plan))
+                return
+            if not await confirm_plan(sess, plan, prompt=prompt, assume_yes=yes):
+                return
+        await download(cfg, plan)
+
+    _run(go())
+
+
+@app.command("status")
+def status_cmd(
+    active: Annotated[bool, typer.Option("--active", help="Only unfinished jobs.")] = False,
+) -> None:
+    """List download jobs."""
+    store = Store(data_dir() / "state.db")
+    try:
+        rows = store.jobs(include_finished=not active)
+    finally:
+        store.close()
+    if rows:
+        console.print(status_table(rows))
+    else:
+        console.print("No downloads yet.")
+
+
+@app.command("resume")
+def resume_cmd(
+    job_id: Annotated[int | None, typer.Argument(help="Job number (default: all).")] = None,
+) -> None:
+    """Continue paused or interrupted downloads."""
+    _run(resume(_cfg(), job_id))
+
+
+@app.command("handoff")
+def handoff_cmd(
+    job_id: Annotated[int, typer.Argument(help="Job number (see `cinemind status`).")],
+) -> None:
+    """Run post_download_command for a job's finished files that are still in the library."""
+    cfg = _cfg()
+    if not cfg.post_download_command.strip():
+        console.print(f"[red]post_download_command is not set[/] in {config_path()}.")
+        raise typer.Exit(1)
+    store = Store(data_dir() / "state.db")
+    try:
+        plan = store.load_plan(job_id)
+        torrents = store.finished_torrents(job_id)
+        started = hand_off_job(cfg, plan.title, torrents, new_batch("handoff", job_id),
+                               store=store, job_id=job_id)  # fmt: skip
+    except KeyError as exc:
+        console.print(f"[red]{exc.args[0]}[/]")
+        raise typer.Exit(1) from None
+    finally:
+        store.close()
+    if not started:
+        console.print(
+            f"Nothing to hand off: job #{job_id} has no finished files left in the library."
+        )
+        return
+    for path in started:
+        console.print(f"  {path.name}")
+    console.print(f"[cyan]{len(started)} file(s) handed to the post-download command[/] "
+                  f"[dim](logs: {log_folder()})[/]")  # fmt: skip
+
+
+@app.command("shortcut")
+def shortcut_cmd(
+    start_menu: Annotated[
+        bool, typer.Option("--start-menu/--no-start-menu", help="Also add a Start menu entry.")
+    ] = True,
+) -> None:
+    """Put a cinemind icon on the desktop (Windows) that opens the home menu."""
+    try:
+        paths = create_shortcuts(start_menu=start_menu)
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from None
+    for path in paths:
+        console.print(f"Created [bold]{path}[/]")
+
+
+@config_app.command("show")
+def config_show() -> None:
+    """Print the current settings."""
+    console.print(f"[dim]{config_path()}[/]")
+    console.print(tomli_w.dumps(_cfg().model_dump()), markup=False)
+
+
+@config_app.command("path")
+def config_path_cmd() -> None:
+    """Print the config file location."""
+    console.print(str(config_path()), markup=False)
+
+
+@config_app.command("set")
+def config_set(
+    key: Annotated[str, typer.Argument(help="Setting name, e.g. tv_root.")],
+    value: Annotated[str, typer.Argument(help="New value. Lists are comma-separated.")],
+) -> None:
+    """Change one setting."""
+    try:
+        cfg = set_value(_cfg(), key, value)
+    except (KeyError, ValueError) as exc:
+        console.print(f"[red]{exc.args[0] if exc.args else exc}[/]")
+        raise typer.Exit(1) from None
+    save_config(cfg)
+    console.print(f"{key} = {getattr(cfg, key)!r}", markup=False)
+    if key == "stream_addons" and cfg.stream_addons:
+        console.print(STREAM_ADDON_NOTICE)
+
+
+STREAM_ADDON_NOTICE = (
+    "[yellow]Note:[/] Stremio stream addons such as Torrentio list torrents from public "
+    "trackers, and much of what they list is copyrighted. Downloading it without permission is "
+    "illegal in many countries, and torrent peers can see your IP address. Only download "
+    "content you have the right to."
+)
+
+
+@app.command("sources")
+def sources_cmd() -> None:
+    """List the stream sources and which ones are on."""
+    cfg = _cfg()
+    for name in available():
+        on = name in cfg.stream_sources
+        mark = "[green]on[/] " if on else "[dim]off[/]"
+        extra = ""
+        if name == "stremio-addons":
+            extra = f" ({len(cfg.stream_addons)} addon(s) in stream_addons)"
+        console.print(f"  {mark}  {name}{extra}")
+    console.print("[dim]Change with: cinemind config set stream_sources internet-archive,...[/]")
+
+
+@config_app.command("reset")
+def config_reset() -> None:
+    """Restore the default settings."""
+    save_config(Config())
+    console.print(f"Defaults written to {config_path()}", markup=False)
+
+
+def main() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):  # not when replaced by a test harness or IDE
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")  # emoji, Cyrillic titles
+            except ValueError:
+                pass
+    app()

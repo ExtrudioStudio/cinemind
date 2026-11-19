@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from stremio_dl import home, shortcut
+from cinemind.cli import home, shortcut
 
 
 def test_icon_has_every_size():
-    data = (resources.files("stremio_dl") / "assets" / shortcut.ICON_NAME).read_bytes()
+    data = (resources.files("cinemind") / "assets" / shortcut.ICON_NAME).read_bytes()
     reserved, kind, count = struct.unpack_from("<HHH", data)
     assert (reserved, kind) == (0, 1)
     sizes = [data[6 + 16 * i] or 256 for i in range(count)]
@@ -29,24 +29,24 @@ def test_create_shortcuts_passes_paths_to_powershell(tmp_path, monkeypatch):
 
     def fake_run(args, env, **kwargs):
         seen.update(args=args, env=env)
-        out = f"{tmp_path}\\Desktop\\stremio-dl.lnk\r\n{tmp_path}\\Programs\\stremio-dl.lnk\r\n"
+        out = f"{tmp_path}\\Desktop\\cinemind.lnk\r\n{tmp_path}\\Programs\\cinemind.lnk\r\n"
         return subprocess.CompletedProcess(args, 0, stdout=out, stderr="")
 
-    monkeypatch.setattr(shortcut, "launcher", lambda: tmp_path / "sdl.exe")
+    monkeypatch.setattr(shortcut, "launcher", lambda: tmp_path / "cinemind.exe")
     paths = shortcut.create_shortcuts(run=fake_run)
 
     assert seen["args"][0] == "powershell.exe" and "-Command" in seen["args"]
     env = seen["env"]
-    assert env["SDL_TARGET"] == str(tmp_path / "sdl.exe")
-    assert env["SDL_START_MENU"] == "1"
-    icon = env["SDL_ICON"]
-    assert icon.endswith("stremio-dl.ico") and Path(icon).read_bytes()[:4] == b"\0\0\1\0"
-    assert [p.name for p in paths] == ["stremio-dl.lnk", "stremio-dl.lnk"]
+    assert env["CINEMIND_TARGET"] == str(tmp_path / "cinemind.exe")
+    assert env["CINEMIND_START_MENU"] == "1"
+    icon = env["CINEMIND_ICON"]
+    assert icon.endswith("cinemind.ico") and Path(icon).read_bytes()[:4] == b"\0\0\1\0"
+    assert [p.name for p in paths] == ["cinemind.lnk", "cinemind.lnk"]
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows shortcuts")
 def test_powershell_errors_are_reported(monkeypatch, tmp_path):
-    monkeypatch.setattr(shortcut, "launcher", lambda: tmp_path / "sdl.exe")
+    monkeypatch.setattr(shortcut, "launcher", lambda: tmp_path / "cinemind.exe")
 
     def failing_run(args, **kwargs):
         return subprocess.CompletedProcess(args, 1, stdout="", stderr="Access denied")

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from stremio_dl.models import Candidate, EpisodeRef
-from stremio_dl.planner import build_plan, replan
-from stremio_dl.runner import DownloadRunner
-from stremio_dl.store import Store
+from cinemind.core.models import Candidate, EpisodeRef
+from cinemind.core.store import Store
+from cinemind.pipeline.runner import DownloadRunner
+from cinemind.planning.planner import build_plan, replan
 
 
 def _plan(friends, cfg):
