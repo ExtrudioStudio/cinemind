@@ -132,12 +132,12 @@ Placeholders:
 | `{root}` | The library root the file is in |
 | `{batch}`, `{batch_size}` | This run's batch id (e.g. `sdl-job-4-20261107-150212`) and its number of files |
 
-Example (the MediaPipeline NAS ingest, which also adds Hebrew subtitles):
+Example (a NAS ingest script that also adds subtitles; replace the paths with your own):
 
 ```toml
-post_download_command = 'powershell.exe -NoProfile -Sta -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Users\talta\MediaPipeline\Invoke-PostDownload.ps1" -Path "{path}" -StremioId "{id}" -CleanupRoot "{root}" -BatchId "{batch}" -BatchSize "{batch_size}"'
-extra_tv_roots = ['\\10.0.0.28\Media\TV Shows']
-extra_movie_roots = ['\\10.0.0.28\Media\Movies']
+post_download_command = 'powershell.exe -NoProfile -Sta -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\path\to\Invoke-PostDownload.ps1" -Path "{path}" -StremioId "{id}" -CleanupRoot "{root}" -BatchId "{batch}" -BatchSize "{batch_size}"'
+extra_tv_roots = ['\\nas\Media\TV Shows']
+extra_movie_roots = ['\\nas\Media\Movies']
 ```
 
 ## Settings
