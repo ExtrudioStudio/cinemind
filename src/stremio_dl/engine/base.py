@@ -36,6 +36,10 @@ class EngineListener(Protocol):
 
     def on_target_done(self, job: TorrentJob, target: FileTarget) -> None: ...
 
+    def on_target_failed(self, job: TorrentJob, target: FileTarget, reason: str) -> None:
+        """A file finished downloading but could not be put in place (it stays as ``.part``)."""
+        ...
+
     def on_job_done(self, job: TorrentJob) -> None: ...
 
     def on_job_dead(

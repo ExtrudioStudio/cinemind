@@ -17,7 +17,7 @@ from . import quality as q
 from .addons.cache import JsonCache
 from .addons.client import Addon, AddonClient
 from .catalog import search
-from .config import Config, cache_dir, data_dir
+from .config import Config, cache_dir, data_dir, log_dir
 from .library import free_space
 from .metadata import fetch_title
 from .models import Key, MediaType, Title
@@ -300,7 +300,15 @@ def report(store: Store, job_id: int, status: str, runner: DownloadRunner | None
         count = len(runner.handed_off)
         console.print(
             f"[cyan]{count} file{'s' if count != 1 else ''} handed to the post-download "
-            f"command[/] [dim](it keeps running in the background; logs: {log_folder()})[/]"
+            f"command[/] [dim](it keeps running in the background; `sdl status` shows how it "
+            f"ended; logs: {log_folder()})[/]"
+        )
+    if runner and runner.engine.listener_errors:
+        count = len(runner.engine.listener_errors)
+        console.print(
+            f"[yellow]{count} internal error{'s' if count != 1 else ''} while recording "
+            f"progress[/]; the downloads continued. Details are in the log: "
+            f"{log_dir() / 'stremio-dl.log'}"
         )
 
 

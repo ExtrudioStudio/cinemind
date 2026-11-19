@@ -229,6 +229,7 @@ def status_table(rows: list[JobRow]) -> Table:
     table.add_column("Done", justify="right")
     table.add_column("Failed", justify="right")
     table.add_column("Status")
+    table.add_column("Hand-off")
     table.add_column("Updated", style="dim")
     colors = {"done": "green", "partial": "yellow", "failed": "red", "paused": "cyan",
               "running": "cyan"}  # fmt: skip
@@ -237,6 +238,19 @@ def status_table(rows: list[JobRow]) -> Table:
         finished = r.counts.get("done", 0) + r.counts.get("skipped", 0)
         table.add_row(
             str(r.id), r.title, r.quality, f"{finished}/{total}", str(r.counts.get("failed", 0)),
-            Text(r.status, style=colors.get(r.status, "")), r.updated.replace("T", " ")[:16],
+            Text(r.status, style=colors.get(r.status, "")), handoff_summary(r.handoffs),
+            r.updated.replace("T", " ")[:16],
         )  # fmt: skip
     return table
+
+
+def handoff_summary(states: dict[str, int]) -> Text:
+    """``2 ok, 1 failed`` for a job's post-download runs (empty when there were none)."""
+    styles = {"ok": "green", "running": "cyan", "failed": "red", "error": "red"}
+    text = Text()
+    for state in ("ok", "running", "failed", "error"):
+        if states.get(state):
+            if text:
+                text.append(", ")
+            text.append(f"{states[state]} {state}", style=styles[state])
+    return text

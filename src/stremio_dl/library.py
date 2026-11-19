@@ -56,6 +56,10 @@ def _render(template: str, root: Path, fields: dict, ext: str) -> Path:
     if overflow > 0:
         stem = sanitize(stem[: max(20, len(stem) - overflow)])
         path = root.joinpath(*dirs, stem + ext)
+    # sanitize() already removes separators, and turns "." and ".." into "_". This is the
+    # backstop: whatever the template or the metadata says, files stay inside the library root.
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError(f"naming template puts {path} outside the library root {root}")
     return path
 
 

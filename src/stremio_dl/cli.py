@@ -251,12 +251,13 @@ def handoff_cmd(
     try:
         plan = store.load_plan(job_id)
         torrents = store.finished_torrents(job_id)
+        started = hand_off_job(cfg, plan.title, torrents, new_batch("handoff", job_id),
+                               store=store, job_id=job_id)  # fmt: skip
     except KeyError as exc:
         console.print(f"[red]{exc.args[0]}[/]")
         raise typer.Exit(1) from None
     finally:
         store.close()
-    started = hand_off_job(cfg, plan.title, torrents, new_batch("handoff", job_id))
     if not started:
         console.print(
             f"Nothing to hand off: job #{job_id} has no finished files left in the library."

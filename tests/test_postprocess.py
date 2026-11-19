@@ -45,7 +45,8 @@ def test_fields_for_an_episode_and_a_movie(cfg, friends):
 
     quoted = Title("kitsu:12", "movie", 'The "Best" Movie')
     fields = postprocess.command_fields(cfg, quoted, target(Path("b.mkv")))
-    assert fields["imdb"] == "" and fields["name"] == "The 'Best' Movie"
+    assert fields["imdb"] == "" and fields["name"] == 'The "Best" Movie'  # kept: argv is safe
+    assert postprocess.command_env(fields)["SDL_NAME"] == 'The "Best" Movie'
 
 
 def test_hand_off_runs_the_command_and_keeps_a_log(cfg, friends, tmp_path):
@@ -95,7 +96,8 @@ def test_handoff_command_sends_a_finished_jobs_remaining_files(cfg, friends, tmp
 
     batches: set[tuple[str, int]] = set()
 
-    def fake_hand_off(c, t, tgt, batch="", batch_size=0) -> bool:
+    def fake_hand_off(c, t, tgt, batch="", batch_size=0, **kwargs) -> bool:
+        assert kwargs["store"] is not None and kwargs["job_id"] == job_id  # results get recorded
         if tgt.final_path.is_file():
             seen.append(tgt.final_path)
             batches.add((batch.rsplit("-", 2)[0], batch_size))
@@ -120,14 +122,19 @@ class _Store:
     def update_torrent(self, *args, **kwargs): ...
 
 
+class _Proc:
+    def poll(self):
+        return 0
+
+
 def test_runner_hands_files_off_only_once_the_torrent_is_done(monkeypatch, cfg, friends):
     seen: list[Path] = []
     calls: list[tuple[str, int]] = []
 
-    def fake_hand_off(c, t, tgt, batch="", batch_size=0):
+    def fake_hand_off(c, t, tgt, batch="", batch_size=0, **kwargs):
         seen.append(tgt.final_path)
         calls.append((batch, batch_size))
-        return 1
+        return None if kwargs.get("job_id") != 1 else _Proc()
 
     monkeypatch.setattr(runner, "hand_off", fake_hand_off)
     keys = [EpisodeRef(1, 1), EpisodeRef(1, 2)]
@@ -141,3 +148,6 @@ def test_runner_hands_files_off_only_once_the_torrent_is_done(monkeypatch, cfg, 
     run.on_job_done(job)
     assert seen == [t.final_path for t in job.targets] == run.handed_off
     assert len(set(calls)) == 1 and calls[0][0].startswith("sdl-job-1-") and calls[0][1] == 2
+    assert len(run._hooks) == 2
+    run.reap()  # both wrappers have exited
+    assert run._hooks == []
