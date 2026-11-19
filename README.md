@@ -179,6 +179,36 @@ Downloads run in the background, one job at a time, while the server runs. If th
 assistant closes the server, the running job is paused with its progress saved, and
 `cinemind resume` (or `resume_job`) continues it.
 
+## Ingest: make every file play directly on the TV
+
+`cinemind ingest` gets a file ready for a weak NAS. The NAS only stores and serves files,
+Plex never transcodes video, and the TV decodes everything itself. So each file is checked
+against a **device profile** (what the TV direct-plays through Plex) before it reaches the
+library:
+
+| Verdict | What happens | Exit |
+|---|---|---|
+| COMPLIANT | Moved into place as it is (a rename on the same share: no data copied) | 0 |
+| FIXABLE | Remuxed with FFmpeg: **video copied, never re-encoded**. Audio converted (DTS → E-AC-3), text subtitles made SRT, image subtitles and extra streams dropped. The output is checked again (rules and duration) before it replaces anything. | 10 |
+| REJECT | Moved to the quarantine folder with a `.reason.txt` (Hi10P, Dolby Vision profile 5, VC-1, …): find another release | 20 |
+
+```powershell
+cinemind config set ingest_root '\\nas\Media'       # with Movies, TV Shows, _incoming, _quarantine
+cinemind config set plex_url http://nas:32400
+cinemind secrets set plex                           # the X-Plex-Token, into the system keyring
+cinemind ingest job42.mkv.part --kind episode --title "One Piece" --year 1999 --tvdb 81797 --season 1 --episode 1
+```
+
+Files get Plex names (`TV Shows/One Piece (1999) {tvdb-81797}/Season 01/...`), and an
+existing show or movie folder is reused. The Plex section that holds the folder is refreshed,
+and subtitle sidecars move with the file. `--dry-run` reports without changing anything, and
+`--json` prints a machine-readable result. Every run is logged as a JSON line.
+
+The rules are a port of the PowerShell pipeline this project started as. All 60 recorded
+cases from it (23 real files, 37 synthetic, one per rule) give the same verdict, word for word,
+including the exact FFmpeg arguments. The bundled profile is `samsung-q60b`; set
+`ingest_profile` to a JSON file of your own for another TV.
+
 ## Stream sources
 
 `stream_sources` lists the sources to ask, in order (`cinemind sources` shows them):

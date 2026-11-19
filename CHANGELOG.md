@@ -11,6 +11,13 @@ and download history are copied from the stremio-dl folders, and the `sdl` comma
 working for this release.
 
 ### Added
+- **Ingest** (`cinemind ingest`): checks a file against a TV profile (Direct Play through
+  Plex), places it as it is, fixes it with FFmpeg without re-encoding the video, or quarantines
+  it with the reason. Plex names (reusing existing folders), a Plex section refresh, subtitle
+  sidecars, a JSON-lines log and v1's exit codes (0/10/20/1). A port of the MediaPipeline v1
+  PowerShell rules that matches all 60 recorded cases word for word.
+- `cinemind secrets` stores tokens and passwords in the system keyring (or `CINEMIND_*`
+  environment variables), never in config.toml.
 - **MCP server** (`cinemind mcp`, `mcp` extra): an AI assistant can search, plan and, with a
   single-use plan id that expires, start downloads, then follow and pause them. Plans are
   limited by size, file count and library paths; `--read-only` offers no side-effect tools;
