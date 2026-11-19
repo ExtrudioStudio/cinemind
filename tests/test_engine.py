@@ -73,6 +73,7 @@ def seeder(tmp_path):
 class Recorder:
     def __init__(self, replacements=None):
         self.metadata, self.done, self.jobs_done, self.dead = [], [], [], []
+        self.failed: list[tuple[str, str]] = []
         self.resume: dict[str, bytes] = {}
         self.replacements = list(replacements or [])
 
@@ -81,6 +82,9 @@ class Recorder:
 
     def on_target_done(self, job, target):
         self.done.append(target.label)
+
+    def on_target_failed(self, job, target, reason):
+        self.failed.append((target.label, reason))
 
     def on_job_done(self, job):
         self.jobs_done.append(job.info_hash)

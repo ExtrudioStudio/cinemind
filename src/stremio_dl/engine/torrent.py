@@ -24,6 +24,7 @@ from urllib.parse import quote
 
 import libtorrent as lt
 
+from .. import __version__
 from ..config import Config
 from ..models import FileTarget, TorrentJob
 from ..streams import VIDEO_EXTS
@@ -88,7 +89,8 @@ class _Active:
     last_progress_at: float
     state: str = "metadata"
     mapping: dict[int, FileTarget] = field(default_factory=dict)  # file index -> target
-    done: set[int] = field(default_factory=set)
+    done: set[int] = field(default_factory=set)  # finished, successfully or not
+    failed: set[int] = field(default_factory=set)  # finished, but the final rename failed
     renaming: dict[int, tuple[int, float]] = field(default_factory=dict)  # idx -> (tries, next)
     unmapped: list[FileTarget] = field(default_factory=list)
     last_done: int = -1
@@ -111,11 +113,16 @@ class TorrentEngine:
         listener: EngineListener | None = None,
         poll_interval: float = 0.5,
         settings: dict[str, Any] | None = None,
+        rename_attempts: int = RENAME_ATTEMPTS,
+        rename_retry_delay: float = RENAME_RETRY_DELAY,
     ):
         self.cfg = cfg
         self.staging_root = staging_root
         self.listener = listener
         self.poll_interval = poll_interval
+        self.rename_attempts = rename_attempts
+        self.rename_retry_delay = rename_retry_delay
+        self.listener_errors: list[str] = []  # callbacks that raised; the downloads kept going
         self._settings_override = settings or {}
         self._ses: Any = None
         self.pending: deque[tuple[TorrentJob, bytes | None]] = deque()
@@ -124,11 +131,28 @@ class TorrentEngine:
         self._garbage: list[tuple[Path, int]] = []
         self._last_resume = time.monotonic()
 
+    # -- listener --------------------------------------------------------------------------
+
+    def _notify(self, method: str, *args: Any) -> Any:
+        """Call one listener method. If it raises, log it and carry on.
+
+        The listener records state (SQLite) and starts hand-offs. A failure there must not stop
+        every other torrent in the session, so it is logged and kept in ``listener_errors``.
+        """
+        if self.listener is None:
+            return None
+        try:
+            return getattr(self.listener, method)(*args)
+        except Exception as exc:
+            log.exception("Listener %s failed", method)
+            self.listener_errors.append(f"{method}: {exc}")
+            return None
+
     # -- session ---------------------------------------------------------------------------
 
     def _settings(self) -> dict[str, Any]:
         settings: dict[str, Any] = {
-            "user_agent": f"stremio-dl/0.1 libtorrent/{lt.__version__}",
+            "user_agent": f"stremio-dl/{__version__} libtorrent/{lt.__version__}",
             "listen_interfaces": self.cfg.listen_interfaces,
             "enable_dht": True,
             "enable_lsd": True,
@@ -269,8 +293,7 @@ class TorrentEngine:
             a.job.targets = [t for t in a.job.targets if all(t is not m for m in missing)]
             orphan = TorrentJob(a.job.info_hash, a.job.release, a.job.trackers, missing)
             self._report_dead(orphan, NOT_IN_TORRENT, missing)
-        if self.listener:
-            self.listener.on_metadata(a.job)
+        self._notify("on_metadata", a.job)
 
     # -- per-tick work ---------------------------------------------------------------------
 
@@ -300,7 +323,7 @@ class TorrentEngine:
                 continue
             tries, next_at = a.renaming.get(idx, (0, 0.0))
             if a.progress[idx] >= target.size and now >= next_at and (tries == 0 or next_at):
-                if tries >= RENAME_ATTEMPTS:
+                if tries >= self.rename_attempts:
                     continue
                 a.handle.rename_file(idx, str(target.final_path))
                 a.renaming[idx] = (tries + 1, 0.0)  # next_at 0 = waiting for the alert
@@ -323,14 +346,18 @@ class TorrentEngine:
         if ok:
             a.done.add(idx)
             log.info("Finished %s -> %s", target.label, target.final_path)
-            if self.listener:
-                self.listener.on_target_done(a.job, target)
-        elif tries < RENAME_ATTEMPTS:
+            self._notify("on_target_done", a.job, target)
+        elif tries < self.rename_attempts:
             log.warning("Rename of %s failed (%s); retrying", target.final_path, error)
-            a.renaming[idx] = (tries, time.monotonic() + RENAME_RETRY_DELAY)
+            a.renaming[idx] = (tries, time.monotonic() + self.rename_retry_delay)
         else:
+            # Leave the complete .part file in place rather than loop forever, and say so: the
+            # item must end up "failed", not look finished.
             a.error = f"could not rename {target.final_path.name}.part: {error}"
-            a.done.add(idx)  # leave the complete .part file in place rather than loop forever
+            log.error("%s: %s", target.label, a.error)
+            a.done.add(idx)
+            a.failed.add(idx)
+            self._notify("on_target_failed", a.job, target, a.error)
 
     def _process_alerts(self) -> None:
         if self._ses is None:
@@ -346,7 +373,7 @@ class TorrentEngine:
             elif isinstance(alert, lt.save_resume_data_alert):
                 if self.listener:
                     data = lt.write_resume_data_buf(alert.params)
-                    self.listener.on_resume_data(_ih(alert.handle), data)
+                    self._notify("on_resume_data", _ih(alert.handle), data)
             elif isinstance(alert, lt.torrent_error_alert):
                 log.error("Torrent error: %s", alert.message())
                 a = self.active.get(_ih(alert.handle))
@@ -375,8 +402,7 @@ class TorrentEngine:
     def _finish(self, a: _Active) -> None:
         self._drop(a)
         self.finished.append(self._view(a, "done"))
-        if self.listener:
-            self.listener.on_job_done(a.job)
+        self._notify("on_job_done", a.job)
 
     def _kill(self, a: _Active, reason: str) -> None:
         log.warning("Giving up on %s (%s): %s", a.job.info_hash, a.job.release, reason)
@@ -390,7 +416,7 @@ class TorrentEngine:
 
     def _report_dead(self, job: TorrentJob, reason: str, remaining: list[FileTarget]) -> None:
         if self.listener and remaining:
-            for replacement in self.listener.on_job_dead(job, reason, remaining):
+            for replacement in self._notify("on_job_dead", job, reason, remaining) or []:
                 self.add_job(replacement)
 
     def _collect_garbage(self, final: bool = False) -> None:
@@ -451,7 +477,7 @@ class TorrentEngine:
                     outstanding -= 1
                     if self.listener:
                         data = lt.write_resume_data_buf(alert.params)
-                        self.listener.on_resume_data(_ih(alert.handle), data)
+                        self._notify("on_resume_data", _ih(alert.handle), data)
                 elif isinstance(alert, lt.save_resume_data_failed_alert):
                     outstanding -= 1
         self._ses = None  # the session closes when the last reference goes away
@@ -482,7 +508,9 @@ class TorrentEngine:
                                                target.size, 0, tstate))  # fmt: skip
                 continue
             got = a.progress[idx] if idx < len(a.progress) else 0
-            if idx in a.done:
+            if idx in a.failed:
+                tstate = "failed"
+            elif idx in a.done:
                 tstate, got = "done", target.size
             elif state == "dead":
                 tstate = "failed"

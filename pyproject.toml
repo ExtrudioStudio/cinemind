@@ -71,7 +71,7 @@ branch = true
 
 [tool.coverage.report]
 # Ratchet: raise this as coverage grows (core modules are 86-96%; the interactive UI is not).
-fail_under = 70
+fail_under = 71
 show_missing = true
 skip_covered = true
 exclude_also = ["if TYPE_CHECKING:", 'raise AssertionError\("unreachable"\)']

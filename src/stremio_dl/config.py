@@ -16,7 +16,10 @@ import platformdirs
 import tomli_w
 from pydantic import BaseModel, ValidationError
 
+from . import __version__
+
 APP_NAME = "stremio-dl"
+PROJECT_URL = "https://github.com/ExtrudioStudio/stremio-dl"
 CINEMETA = "https://v3-cinemeta.strem.io/manifest.json"
 TORRENTIO = "https://torrentio.strem.fun/manifest.json"
 
@@ -100,7 +103,8 @@ class Config(BaseModel):
     # HTTP
     http_concurrency: int = 4
     http_timeout: float = 20.0
-    user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) stremio-dl/0.1"
+    # Says what we are, in the "compatible" form crawlers use, so addon operators can tell us apart.
+    user_agent: str = f"Mozilla/5.0 (compatible; stremio-dl/{__version__}; +{PROJECT_URL})"
 
 
 def load_config(path: Path | None = None) -> Config:
