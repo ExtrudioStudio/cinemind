@@ -1,13 +1,8 @@
-"""Fetch streams from the stream addons, normalize them into :class:`Candidate`, filter and rank.
+"""Collect candidates from every stream source, then filter, de-duplicate and rank them.
 
-Torrentio stream example (abridged)::
-
-    name:  "Torrentio\\n1080p"                     (line 2 is usually, but not always, a resolution)
-    title: "Friends S01 1080p BluRay x265-GROUP\\n"  (release name)
-           "Friends.S01E10.1080p.mkv\\n"            (file inside a pack; absent for single files)
-           "👤 21 💾 6.55 GB ⚙️ Rutracker\\n"        (seeders, size, source site)
-           "🇬🇧 / 🇷🇺"                              (audio languages; absent for English-only)
-    infoHash, fileIdx, behaviorHints.filename, sources ["tracker:udp://…", "dht:<hash>"]
+Sources (:mod:`cinemind.sources`) say what is on offer. This module decides what is usable
+(:func:`rejection_reason`), merges offers of the same file, and orders them for one requested
+resolution (:func:`rank`, :func:`choose`).
 """
 
 from __future__ import annotations
@@ -18,13 +13,15 @@ import re
 from collections import Counter
 from functools import lru_cache
 from pathlib import PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cinemind.core.aio import reraise_cancelled
 from cinemind.core.config import Config
 from cinemind.core.models import Candidate, EpisodeRef, Key, Title
 from cinemind.planning import quality as q
-from cinemind.sources.stremio.client import Addon, AddonClient
+
+if TYPE_CHECKING:
+    from cinemind.sources.base import StreamSource
 
 log = logging.getLogger(__name__)
 
@@ -34,10 +31,6 @@ BLOCKED_EXTS = {
     ".jar", ".apk", ".zip", ".rar", ".7z", ".iso", ".url", ".hta",
 }  # fmt: skip
 
-_SEEDERS = re.compile(r"👤\s*(\d+)")
-_SIZE = re.compile(r"💾\s*([\d.,]+)\s*([KMGT]?B)", re.I)
-_SOURCE = re.compile(r"⚙️?\s*(.+?)\s*$")
-_FLAG = re.compile(r"[\U0001F1E6-\U0001F1FF]{2}")
 _LABEL_RES = [
     (re.compile(r"\b(4k|2160p|uhd)\b", re.I), "2160p"),
     (re.compile(r"\b1440p\b", re.I), "1440p"),
@@ -51,43 +44,8 @@ _CAM = re.compile(
     r"dvdscr|bdscr|hdtc)(?:$|[\s.\-_\])])",
     re.I,
 )
-_UNITS = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
-
-# Country flag → audio language. Unlisted flags fall back to the lowercase country code.
-_COUNTRY_LANG = {
-    "GB": "en", "US": "en", "AU": "en", "CA": "en", "IE": "en", "NZ": "en",
-    "RU": "ru", "UA": "uk", "FR": "fr", "IT": "it", "ES": "es", "MX": "es", "AR": "es",
-    "DE": "de", "AT": "de", "PT": "pt", "BR": "pt", "NL": "nl", "PL": "pl", "CZ": "cs",
-    "SK": "sk", "HU": "hu", "RO": "ro", "BG": "bg", "GR": "el", "TR": "tr", "IL": "he",
-    "SA": "ar", "AE": "ar", "EG": "ar", "IR": "fa", "IN": "hi", "JP": "ja", "KR": "ko",
-    "CN": "zh", "TW": "zh", "HK": "zh", "TH": "th", "VN": "vi", "ID": "id", "MY": "ms",
-    "PH": "tl", "SE": "sv", "NO": "no", "DK": "da", "FI": "fi", "EE": "et", "LV": "lv",
-    "LT": "lt", "RS": "sr", "HR": "hr", "SI": "sl", "LA": "es",
-}  # fmt: skip
-
-
-def _flag_to_country(flag: str) -> str:
-    return "".join(chr(ord(ch) - 0x1F1E6 + ord("A")) for ch in flag)
-
-
-def parse_languages(text: str) -> tuple[str, ...]:
-    langs: list[str] = []
-    for flag in _FLAG.findall(text):
-        country = _flag_to_country(flag)
-        lang = _COUNTRY_LANG.get(country, country.lower())
-        if lang not in langs:
-            langs.append(lang)
-    if "🌐" in text and "multi" not in langs:
-        langs.append("multi")
-    return tuple(langs)
-
-
-def parse_size(text: str) -> int:
-    m = _SIZE.search(text)
-    if not m:
-        return 0
-    number = float(m.group(1).replace(",", ""))
-    return int(number * _UNITS.get(m.group(2).upper(), 1))
+# Lowest frame height for each label; a 1440x1080 anamorphic file is still 1080p.
+_HEIGHTS = ((2000, "2160p"), (1300, "1440p"), (1000, "1080p"), (700, "720p"), (460, "480p"))
 
 
 @lru_cache(maxsize=4096)
@@ -115,49 +73,11 @@ def detect_resolution(label: str, filename: str, release: str) -> str:
     return _guess_resolution(filename) or _guess_resolution(release) or q.UNKNOWN
 
 
-def normalize_stream(stream: dict[str, Any], addon: str = "") -> Candidate | None:
-    info_hash = (stream.get("infoHash") or "").lower()
-    if not re.fullmatch(r"[0-9a-f]{40}", info_hash):
-        return None  # HTTP/debrid or malformed streams aren't handled by the torrent engine
-    name = stream.get("name") or ""
-    label = name.split("\n", 1)[1].strip() if "\n" in name else ""
-    title = stream.get("title") or stream.get("description") or ""
-    lines = [line.strip() for line in title.split("\n") if line.strip()]
-
-    stats_idx = next((i for i, line in enumerate(lines) if "👤" in line or "💾" in line), None)
-    head = lines[:stats_idx] if stats_idx is not None else lines
-    tail = lines[stats_idx + 1 :] if stats_idx is not None else []
-    stats = lines[stats_idx] if stats_idx is not None else ""
-
-    release = head[0] if head else ""
-    inner_path = head[1] if len(head) > 1 else ""
-    hints = stream.get("behaviorHints") or {}
-    filename = hints.get("filename") or PurePosixPath(inner_path).name or release
-
-    seeders_m = _SEEDERS.search(stats)
-    source_m = _SOURCE.search(stats)
-    raw_idx = stream.get("fileIdx")
-    file_idx = int(raw_idx) if raw_idx is not None and str(raw_idx).isdigit() else None
-    hdr = tuple(t for t in re.split(r"[\s|]+", label) if t.upper() in {"DV", "HDR", "HDR10+"})
-
-    return Candidate(
-        info_hash=info_hash,
-        file_idx=file_idx,
-        resolution=detect_resolution(label, filename, release),
-        seeders=int(seeders_m.group(1)) if seeders_m else 0,
-        size=parse_size(stats),
-        source=source_m.group(1) if source_m else "",
-        languages=parse_languages(" ".join(tail)),
-        filename=filename,
-        release=release,
-        is_pack=bool(inner_path),
-        hdr=hdr,
-        trackers=tuple(
-            s.split(":", 1)[1] for s in stream.get("sources") or [] if s.startswith("tracker:")
-        ),
-        label=label,
-        addon=addon,
-    )
+def resolution_from_height(height: int) -> str:
+    """The resolution label for a frame height in pixels (0 or less means unknown)."""
+    if height <= 0:
+        return q.UNKNOWN
+    return next((label for floor, label in _HEIGHTS if height >= floor), "360p")
 
 
 def rejection_reason(c: Candidate, cfg: Config) -> str | None:
@@ -183,17 +103,23 @@ def usable(cands: list[Candidate], cfg: Config) -> list[Candidate]:
     return [c for c in cands if rejection_reason(c, cfg) is None]
 
 
+def _order(c: Candidate) -> tuple[int, int, int]:
+    # A direct download needs no peers, so it goes before torrents at the same resolution.
+    # Within each kind: most seeders (or most popular archive item) first, bigger file next.
+    return (0 if c.is_direct else 1, -c.seeders, -c.size)
+
+
 def rank(cands: list[Candidate], requested: str) -> list[Candidate]:
-    """Filter to the requested resolution; most seeders first (size breaks ties)."""
+    """Filter to the requested resolution and order the rest, best first."""
     pool = [c for c in cands if q.matches(requested, c.resolution)]
     if requested == q.BEST:
-        pool = [c for c in pool if c.seeders > 0] or pool
-        return sorted(pool, key=lambda c: (-q.rank(c.resolution), -c.seeders, -c.size))
-    return sorted(pool, key=lambda c: (-c.seeders, -c.size))
+        pool = [c for c in pool if c.seeders > 0 or c.is_direct] or pool
+        return sorted(pool, key=lambda c: (-q.rank(c.resolution), *_order(c)))
+    return sorted(pool, key=_order)
 
 
 def merge(cands: list[Candidate]) -> list[Candidate]:
-    """De-duplicate offers of the same file from several addons, keeping the best-seeded one."""
+    """De-duplicate offers of the same file from several sources, keeping the best-seeded one."""
     best: dict[tuple[str, int | None], Candidate] = {}
     for c in cands:
         key = (c.info_hash, c.file_idx)
@@ -203,32 +129,25 @@ def merge(cands: list[Candidate]) -> list[Candidate]:
 
 
 class StreamResolver:
-    def __init__(self, client: AddonClient, addons: list[Addon], cfg: Config):
-        self.client = client
-        self.cfg = cfg
-        self.addons = addons
+    """Asks every configured source that supports a title, and keeps the usable offers."""
 
-    def _addons_for(self, title: Title, stream_id: str) -> list[Addon]:
-        return [a for a in self.addons if a.supports("stream", title.type, stream_id)]
+    def __init__(self, sources: list[StreamSource], cfg: Config):
+        self.sources = sources
+        self.cfg = cfg
 
     async def candidates(self, title: Title, ref: EpisodeRef | None) -> list[Candidate]:
         """All usable candidates for one episode (or the movie), any resolution."""
-        stream_id = title.stream_id(ref)
-        addons = self._addons_for(title, stream_id)
+        sources = [s for s in self.sources if s.supports(title)]
         results = await asyncio.gather(
-            *(self.client.streams(a, title.type, stream_id) for a in addons),
-            return_exceptions=True,
+            *(s.candidates(title, ref) for s in sources), return_exceptions=True
         )
         found: list[Candidate] = []
-        for addon, raw in zip(addons, results, strict=True):
-            streams = reraise_cancelled(raw)
-            if isinstance(streams, Exception):
-                log.warning("Streams failed on %s for %s: %s", addon.name, stream_id, streams)
+        for source, raw in zip(sources, results, strict=True):
+            got = reraise_cancelled(raw)
+            if isinstance(got, Exception):
+                log.warning("Source %s failed for %s: %s", source.name, title.stream_id(ref), got)
                 continue
-            for stream in streams:
-                cand = normalize_stream(stream, addon.name)
-                if cand is not None:
-                    found.append(cand)
+            found.extend(got)
         return usable(merge(found), self.cfg)
 
     async def all_candidates(

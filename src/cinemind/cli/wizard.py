@@ -32,9 +32,11 @@ from cinemind.planning.library import free_space
 from cinemind.planning.planner import Plan, build_plan
 from cinemind.planning.selection import Selection, SelectionError, parse_selection
 from cinemind.planning.streams import StreamResolver
+from cinemind.sources.base import SourceContext
+from cinemind.sources.registry import load_sources
 from cinemind.sources.stremio.cache import JsonCache
 from cinemind.sources.stremio.catalog import search
-from cinemind.sources.stremio.client import Addon, AddonClient
+from cinemind.sources.stremio.client import Addon, AddonClient, AddonError
 from cinemind.sources.stremio.metadata import fetch_title
 
 SYNTAX_HINT = (
@@ -59,13 +61,25 @@ class Session:
     resolver: StreamResolver
 
 
+async def _stream_addons(client: AddonClient, cfg: Config) -> list[Addon]:
+    """The configured Stremio stream addons. Unlike metadata, they are optional."""
+    if not cfg.stream_addons:
+        return []
+    try:
+        return await client.load_all(cfg.stream_addons)
+    except AddonError as exc:
+        console.print(f"[yellow]{exc}[/] Continuing with the other sources.")
+        return []
+
+
 @asynccontextmanager
 async def open_session(cfg: Config) -> AsyncIterator[Session]:
     async with AddonClient(cfg, JsonCache(cache_dir() / "http")) as client:
         with Status("Loading addons…", console=console):
             meta_addons = await client.load_all(cfg.meta_addons)
-            stream_addons = await client.load_all(cfg.stream_addons)
-        yield Session(cfg, client, meta_addons, StreamResolver(client, stream_addons, cfg))
+            stream_addons = await _stream_addons(client, cfg)
+        sources = load_sources(cfg.stream_sources, SourceContext(cfg, client, stream_addons))
+        yield Session(cfg, client, meta_addons, StreamResolver(sources, cfg))
 
 
 def interactive() -> bool:

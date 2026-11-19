@@ -13,7 +13,9 @@ uv run pre-commit install    # run the checks below on every commit
 ```
 
 libtorrent ships wheels for Windows, macOS and musl Linux (Alpine). On glibc Linux (Ubuntu,
-Debian, Fedora), develop in a `python:3.13-alpine` container, as CI does.
+Debian, Fedora), use `uv sync --no-group torrent` and `uv run --no-sync ...`: everything but
+the BitTorrent tests runs. To work on the torrent engine there, use a `python:3.13-alpine`
+container, as CI does.
 
 ## Checks
 
@@ -40,15 +42,13 @@ Tests marked `network` call the live addon APIs. CI skips them; run them by hand
 
 ## Where things live
 
-| Path | Contents |
+| Path (under `src/cinemind/`) | Contents |
 |---|---|
-| `src/stremio_dl/addons/` | Stremio addon protocol client and its disk cache |
-| `catalog.py`, `metadata.py` | Search and title metadata |
-| `selection.py`, `quality.py` | The `s1e2-5 /1080p` selection language |
-| `streams.py`, `planner.py` | Stream normalisation, ranking and the download plan |
-| `engine/` | The downloader protocol and the libtorrent engine |
-| `library.py` | Library paths and "already have it" checks |
-| `store.py` | SQLite state: jobs, items, torrents and resume data |
-| `runner.py`, `postprocess.py` | Running a plan, and the post-download command |
-| `cli.py`, `home.py`, `wizard.py`, `ui.py` | Command line, home menu and terminal UI |
-| `tests/fixtures/` | Recorded addon responses and the ingest golden cases |
+| `core/` | `config.py` (settings, folders, the stremio-dl migration), `models.py`, `store.py` (SQLite: jobs, items, downloads, hand-offs; WAL and migrations) |
+| `sources/` | `base.py` (the `StreamSource` contract), `registry.py` (built-ins and entry-point plugins), `internet_archive.py` |
+| `sources/stremio/` | Stremio addon protocol client and disk cache, catalog search, metadata, the addon stream source |
+| `planning/` | `selection.py` / `quality.py` (the `s1e2-5 /1080p` language), `streams.py` (filtering, ranking, the resolver), `planner.py`, `library.py` |
+| `engines/` | `base.py` (the downloader protocol), `http.py`, `torrent.py` (libtorrent), `multi.py` (runs both) |
+| `pipeline/` | `runner.py`, `postprocess.py` (the post-download command), `hookrun.py` (its wrapper) |
+| `cli/` | `app.py` (Typer commands), `home.py`, `wizard.py`, `ui.py`, `shortcut.py` |
+| `tests/fixtures/` | Recorded addon and Internet Archive responses, and the ingest golden cases |

@@ -27,7 +27,14 @@ import libtorrent as lt
 from cinemind import __version__
 from cinemind.core.config import Config
 from cinemind.core.models import FileTarget, TorrentJob
-from cinemind.engines.base import EngineListener, JobView, TargetView
+from cinemind.engines.base import (
+    NOT_IN_TORRENT,
+    EngineListener,
+    JobView,
+    ListenerMixin,
+    Submit,
+    TargetView,
+)
 from cinemind.planning.streams import VIDEO_EXTS
 
 log = logging.getLogger(__name__)
@@ -49,7 +56,7 @@ PRIORITY_WANTED = 4
 RESUME_INTERVAL = 60.0
 RENAME_RETRY_DELAY = 2.0
 RENAME_ATTEMPTS = 8
-NOT_IN_TORRENT = "file not in torrent"
+__all__ = ["NOT_IN_TORRENT", "TorrentEngine"]
 
 
 def _ih(handle: Any) -> str:
@@ -105,7 +112,7 @@ class _Active:
         return open_ + [t for t in self.job.targets if id(t) not in mapped]
 
 
-class TorrentEngine:
+class TorrentEngine(ListenerMixin):
     def __init__(
         self,
         cfg: Config,
@@ -115,6 +122,7 @@ class TorrentEngine:
         settings: dict[str, Any] | None = None,
         rename_attempts: int = RENAME_ATTEMPTS,
         rename_retry_delay: float = RENAME_RETRY_DELAY,
+        submit: Submit | None = None,
     ):
         self.cfg = cfg
         self.staging_root = staging_root
@@ -122,6 +130,9 @@ class TorrentEngine:
         self.poll_interval = poll_interval
         self.rename_attempts = rename_attempts
         self.rename_retry_delay = rename_retry_delay
+        # Where replacement jobs go. Engines routes them, so a dead torrent can fall back to
+        # a direct download; on its own, the engine queues them itself.
+        self.submit: Submit = submit or self.add_job
         self.listener_errors: list[str] = []  # callbacks that raised; the downloads kept going
         self._settings_override = settings or {}
         self._ses: Any = None
@@ -130,23 +141,6 @@ class TorrentEngine:
         self.finished: list[JobView] = []
         self._garbage: list[tuple[Path, int]] = []
         self._last_resume = time.monotonic()
-
-    # -- listener --------------------------------------------------------------------------
-
-    def _notify(self, method: str, *args: Any) -> Any:
-        """Call one listener method. If it raises, log it and carry on.
-
-        The listener records state (SQLite) and starts hand-offs. A failure there must not stop
-        every other torrent in the session, so it is logged and kept in ``listener_errors``.
-        """
-        if self.listener is None:
-            return None
-        try:
-            return getattr(self.listener, method)(*args)
-        except Exception as exc:
-            log.exception("Listener %s failed", method)
-            self.listener_errors.append(f"{method}: {exc}")
-            return None
 
     # -- session ---------------------------------------------------------------------------
 
@@ -417,7 +411,7 @@ class TorrentEngine:
     def _report_dead(self, job: TorrentJob, reason: str, remaining: list[FileTarget]) -> None:
         if self.listener and remaining:
             for replacement in self._notify("on_job_dead", job, reason, remaining) or []:
-                self.add_job(replacement)
+                self.submit(replacement)
 
     def _collect_garbage(self, final: bool = False) -> None:
         keep = []
@@ -439,23 +433,34 @@ class TorrentEngine:
 
     # -- loop ------------------------------------------------------------------------------
 
+    @property
+    def idle(self) -> bool:
+        return not self.pending and not self.active
+
+    def step(self) -> None:
+        self._process_alerts()
+        self._start_pending()
+        now = time.monotonic()
+        for a in list(self.active.values()):
+            self._tick(a, now)
+        self._collect_garbage()
+        if now - self._last_resume > RESUME_INTERVAL:
+            self._request_resume_data()
+            self._last_resume = now
+
+    def finish(self) -> None:
+        self._process_alerts()
+        self._collect_garbage()
+
     async def run(self, on_tick: Callable[[list[JobView]], None] | None = None) -> None:
+        """Run on its own until every job is done (Engines drives step() instead)."""
         try:
-            while self.pending or self.active:
-                self._process_alerts()
-                self._start_pending()
-                now = time.monotonic()
-                for a in list(self.active.values()):
-                    self._tick(a, now)
-                self._collect_garbage()
-                if now - self._last_resume > RESUME_INTERVAL:
-                    self._request_resume_data()
-                    self._last_resume = now
+            while not self.idle:
+                self.step()
                 if on_tick:
                     on_tick(self.snapshot())
                 await asyncio.sleep(self.poll_interval)
-            self._process_alerts()
-            self._collect_garbage()
+            self.finish()
             if on_tick:
                 on_tick(self.snapshot())
         except asyncio.CancelledError:

@@ -23,7 +23,6 @@ from cinemind import __version__
 APP_NAME = "cinemind"
 PROJECT_URL = "https://github.com/ExtrudioStudio/cinemind"
 CINEMETA = "https://v3-cinemeta.strem.io/manifest.json"
-TORRENTIO = "https://torrentio.strem.fun/manifest.json"
 
 
 def _home_override() -> Path | None:
@@ -106,10 +105,15 @@ def _videos_dir() -> Path:
 
 
 class Config(BaseModel):
-    # Addons: paste a *configured* manifest URL to keep its options (e.g. a Torrentio
-    # URL with "sort=seeders|qualityfilter=cam" in the path).
+    # Metadata: Stremio meta addons (Cinemeta finds titles and lists their episodes).
     meta_addons: list[str] = [CINEMETA]
-    stream_addons: list[str] = [TORRENTIO]
+    # Where downloads come from, in order (see `cinemind sources`). "internet-archive" offers
+    # public-domain films; "stremio-addons" uses the addons in stream_addons below.
+    stream_sources: list[str] = ["internet-archive", "stremio-addons"]
+    # Stremio stream addons, none by default. Paste a *configured* manifest URL to keep its
+    # options (e.g. a Torrentio URL with "sort=seeders|qualityfilter=cam" in the path). Only
+    # download content you have the right to.
+    stream_addons: list[str] = []
 
     # Library layout
     tv_root: str = str(_videos_dir() / "TV Shows")
@@ -143,6 +147,9 @@ class Config(BaseModel):
     seed_ratio: float = 0.0  # 0 = stop as soon as the wanted files are complete
     metadata_timeout: int = 120
     stall_timeout: int = 180
+
+    # Direct (HTTP) downloads
+    max_active_http: int = 2
 
     # HTTP
     http_concurrency: int = 4

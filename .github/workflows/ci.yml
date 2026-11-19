@@ -56,6 +56,24 @@ jobs:
       # coverage gate in pyproject.toml is enforced by the Windows jobs; this one only reports it.
       - run: uv run pytest -m "not network" --cov --cov-report=term --cov-fail-under=0
 
+  # A plain Ubuntu (glibc) install has no libtorrent wheel: everything but BitTorrent must work.
+  test-no-torrent:
+    name: Test (Ubuntu, without BitTorrent)
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: "3.13"
+      UV_PYTHON_PREFERENCE: managed
+      UV_NO_SYNC: "1" # `uv run` must not re-add the default torrent group
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked --no-group torrent
+      - run: uv run python -c "import importlib.util as u; assert u.find_spec('libtorrent') is None"
+      - run: uv run pytest -m "not network"
+      - run: uv run cinemind --version
+
   test-windows:
     name: Test (Windows, Python ${{ matrix.python }})
     runs-on: windows-latest

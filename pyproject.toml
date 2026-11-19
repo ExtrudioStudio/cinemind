@@ -14,8 +14,12 @@ dependencies = [
     "platformdirs>=4.2",
     "tomli-w>=1.0",
     "guessit>=3.8",
-    "libtorrent>=2.0.9",
 ]
+
+[project.optional-dependencies]
+# BitTorrent downloads (Stremio stream addons). libtorrent has wheels for Windows, macOS and
+# musl Linux (Alpine); without it, cinemind still does direct downloads.
+torrent = ["libtorrent>=2.0.9"]
 
 [project.scripts]
 cinemind = "cinemind.cli.app:main"
@@ -38,6 +42,12 @@ dev = [
     "respx>=0.21",
     "ruff>=0.5",
 ]
+# The same as the "torrent" extra, as a group so `uv sync` installs it in a checkout. Leave it
+# out with `uv sync --no-group torrent` where libtorrent has no wheel (glibc Linux).
+torrent = ["libtorrent>=2.0.9"]
+
+[tool.uv]
+default-groups = ["dev", "torrent"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -72,7 +82,7 @@ branch = true
 
 [tool.coverage.report]
 # Ratchet: raise this as coverage grows (core modules are 86-96%; the interactive UI is not).
-fail_under = 71
+fail_under = 74
 show_missing = true
 skip_covered = true
 exclude_also = ["if TYPE_CHECKING:", 'raise AssertionError\("unreachable"\)']

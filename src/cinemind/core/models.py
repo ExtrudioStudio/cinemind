@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -102,12 +103,16 @@ class SearchResult:
 
 @dataclass(frozen=True)
 class Candidate:
-    """One normalized stream offer from a stream addon."""
+    """One normalized stream offer from a stream source.
+
+    ``info_hash`` identifies the download: the torrent's v1 info-hash, or for a direct HTTP
+    download (``url`` set) the SHA-1 of the URL, so both kinds key jobs the same way.
+    """
 
     info_hash: str
     file_idx: int | None
     resolution: str  # "2160p" | "1440p" | "1080p" | "720p" | "480p" | "360p" | "unknown"
-    seeders: int
+    seeders: int  # torrent seeders; for direct downloads, the source's popularity count
     size: int  # bytes, 0 when unknown
     source: str = ""
     languages: tuple[str, ...] = ()
@@ -117,7 +122,18 @@ class Candidate:
     hdr: tuple[str, ...] = ()
     trackers: tuple[str, ...] = ()
     label: str = ""  # second line of the addon's "name", e.g. "1080p" or "4k DV | HDR"
-    addon: str = ""
+    addon: str = ""  # the source (or Stremio addon) that offered it
+    url: str = ""  # direct HTTP download; empty for torrents
+    md5: str = ""  # checksum published by the source, verified after a direct download
+
+    @property
+    def is_direct(self) -> bool:
+        return bool(self.url)
+
+    @staticmethod
+    def id_for_url(url: str) -> str:
+        """The ``info_hash`` used for a direct download."""
+        return hashlib.sha1(url.encode("utf-8")).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -181,11 +197,21 @@ class FileTarget:
 
 @dataclass
 class TorrentJob:
+    """One download: a torrent with the files wanted from it, or one direct HTTP file.
+
+    (The name predates direct downloads. Both kinds share it because the planner, the store
+    and resume handle them the same way; :attr:`is_direct` tells them apart.)
+    """
+
     info_hash: str
     release: str
     trackers: tuple[str, ...]
     targets: list[FileTarget]
     peers: list[tuple[str, int]] = field(default_factory=list)  # extra peers to dial directly
+
+    @property
+    def is_direct(self) -> bool:
+        return bool(self.targets) and all(t.candidate.is_direct for t in self.targets)
 
     @property
     def total_size(self) -> int:

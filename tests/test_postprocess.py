@@ -42,7 +42,7 @@ def test_fields_for_an_episode_and_a_movie(cfg, friends):
     batch = postprocess.command_fields(
         cfg, INCEPTION, target(Path("i.mkv")), "cinemind-job-4-x", 13
     )
-    assert (batch["batch"], batch["batch_size"]) == ("cm-job-4-x", "13")
+    assert (batch["batch"], batch["batch_size"]) == ("cinemind-job-4-x", "13")
     assert postprocess.new_batch("job", 4).startswith("cinemind-job-4-")
 
     quoted = Title("kitsu:12", "movie", 'The "Best" Movie')

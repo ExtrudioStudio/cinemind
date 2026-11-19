@@ -13,8 +13,8 @@ from cinemind.cli.ui import console, progress_table
 from cinemind.core.config import Config, data_dir
 from cinemind.core.models import FileTarget, TorrentJob
 from cinemind.core.store import Store
-from cinemind.engines.base import JobView
-from cinemind.engines.torrent import NOT_IN_TORRENT, TorrentEngine
+from cinemind.engines.base import NOT_IN_TORRENT, JobView
+from cinemind.engines.multi import Engines
 from cinemind.pipeline.postprocess import hand_off, new_batch
 from cinemind.planning.planner import Plan, replan
 
@@ -29,7 +29,7 @@ class DownloadRunner:
         self.store = store
         self.job_id = job_id
         self.plan = plan
-        self.engine = TorrentEngine(cfg, data_dir() / "staging", listener=self)
+        self.engine = Engines(cfg, data_dir() / "staging", listener=self)
         self.handed_off: list[Path] = []  # files given to cfg.post_download_command
         self.batch = new_batch("job", job_id)  # this run's files form one batch for that command
         self.batch_size = sum(len(job.targets) for job in plan.jobs)

@@ -1,16 +1,8 @@
 from __future__ import annotations
 
 from cinemind.core.config import Config
-from cinemind.planning.streams import (
-    choose,
-    merge,
-    normalize_stream,
-    parse_languages,
-    parse_size,
-    rank,
-    rejection_reason,
-    usable,
-)
+from cinemind.planning.streams import choose, merge, rank, rejection_reason, usable
+from cinemind.sources.stremio.streams import normalize_stream, parse_languages, parse_size
 
 
 def _all(streams):

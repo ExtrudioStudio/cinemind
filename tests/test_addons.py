@@ -10,6 +10,7 @@ from cinemind.sources.stremio.cache import JsonCache
 from cinemind.sources.stremio.catalog import search
 from cinemind.sources.stremio.client import Addon, AddonClient, AddonError
 from cinemind.sources.stremio.metadata import fetch_title
+from cinemind.sources.stremio.streams import StremioAddonSource
 
 from .conftest import load
 
@@ -72,7 +73,8 @@ async def test_streams_retry_then_succeed_and_404_is_empty(mocked, tmp_path, fri
     mocked.get(f"{TORRENTIO}/stream/series/tt0108778:1:11.json").respond(404)
     cfg = Config(stream_addons=[f"{TORRENTIO}/manifest.json"])
     async with AddonClient(cfg, JsonCache(tmp_path), retry_wait=0.01) as client:
-        resolver = StreamResolver(client, await client.load_all(cfg.stream_addons), cfg)
+        addons = await client.load_all(cfg.stream_addons)
+        resolver = StreamResolver([StremioAddonSource(client, addons)], cfg)
         found = await resolver.all_candidates(friends, [friends.episodes[9].ref,
                                                         friends.episodes[10].ref])  # fmt: skip
     assert route.call_count == 2

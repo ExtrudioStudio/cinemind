@@ -45,6 +45,7 @@ from cinemind.core.store import Store
 from cinemind.pipeline.postprocess import hand_off_job, log_folder, new_batch
 from cinemind.planning.quality import parse_quality
 from cinemind.planning.selection import SelectionError, parse_selection, split_spec
+from cinemind.sources.registry import available
 from cinemind.sources.stremio.catalog import search
 from cinemind.sources.stremio.client import AddonError
 
@@ -329,6 +330,30 @@ def config_set(
         raise typer.Exit(1) from None
     save_config(cfg)
     console.print(f"{key} = {getattr(cfg, key)!r}", markup=False)
+    if key == "stream_addons" and cfg.stream_addons:
+        console.print(STREAM_ADDON_NOTICE)
+
+
+STREAM_ADDON_NOTICE = (
+    "[yellow]Note:[/] Stremio stream addons such as Torrentio list torrents from public "
+    "trackers, and much of what they list is copyrighted. Downloading it without permission is "
+    "illegal in many countries, and torrent peers can see your IP address. Only download "
+    "content you have the right to."
+)
+
+
+@app.command("sources")
+def sources_cmd() -> None:
+    """List the stream sources and which ones are on."""
+    cfg = _cfg()
+    for name in available():
+        on = name in cfg.stream_sources
+        mark = "[green]on[/] " if on else "[dim]off[/]"
+        extra = ""
+        if name == "stremio-addons":
+            extra = f" ({len(cfg.stream_addons)} addon(s) in stream_addons)"
+        console.print(f"  {mark}  {name}{extra}")
+    console.print("[dim]Change with: cinemind config set stream_sources internet-archive,...[/]")
 
 
 @config_app.command("reset")

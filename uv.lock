@@ -108,10 +108,10 @@ wheels = [
 name = "cinemind"
 version = "0.2.0.dev0"
 source = { editable = "." }
+default-groups = ["dev", "torrent"]
 dependencies = [
     { name = "guessit" },
     { name = "httpx" },
-    { name = "libtorrent" },
     { name = "platformdirs" },
     { name = "pydantic" },
     { name = "questionary" },
@@ -119,6 +119,11 @@ dependencies = [
     { name = "tenacity" },
     { name = "tomli-w" },
     { name = "typer" },
+]
+
+[package.optional-dependencies]
+torrent = [
+    { name = "libtorrent" },
 ]
 
 [package.dev-dependencies]
@@ -131,12 +136,15 @@ dev = [
     { name = "respx" },
     { name = "ruff" },
 ]
+torrent = [
+    { name = "libtorrent" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "guessit", specifier = ">=3.8" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "libtorrent", specifier = ">=2.0.9" },
+    { name = "libtorrent", marker = "extra == 'torrent'", specifier = ">=2.0.9" },
     { name = "platformdirs", specifier = ">=4.2" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "questionary", specifier = ">=2.0" },
@@ -145,6 +153,7 @@ requires-dist = [
     { name = "tomli-w", specifier = ">=1.0" },
     { name = "typer", specifier = ">=0.12" },
 ]
+provides-extras = ["torrent"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -156,6 +165,7 @@ dev = [
     { name = "respx", specifier = ">=0.21" },
     { name = "ruff", specifier = ">=0.5" },
 ]
+torrent = [{ name = "libtorrent", specifier = ">=2.0.9" }]
 
 [[package]]
 name = "colorama"

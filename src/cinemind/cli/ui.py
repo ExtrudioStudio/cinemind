@@ -11,7 +11,7 @@ from rich.progress_bar import ProgressBar
 from rich.table import Table
 from rich.text import Text
 
-from cinemind.core.models import SearchResult, Title
+from cinemind.core.models import SearchResult, Title, TorrentJob
 from cinemind.core.store import JobRow
 from cinemind.engines.base import JobView
 from cinemind.planning import quality as q
@@ -107,6 +107,18 @@ def movie_resolutions(counts: Counter) -> Text:
     return text
 
 
+def sources_phrase(jobs: list[TorrentJob]) -> str:
+    """``2 torrents and 1 direct download``."""
+    direct = sum(1 for job in jobs if job.is_direct)
+    parts = []
+    if len(jobs) - direct:
+        n = len(jobs) - direct
+        parts.append(f"{n} torrent{'s' if n != 1 else ''}")
+    if direct:
+        parts.append(f"{direct} direct download{'s' if direct != 1 else ''}")
+    return " and ".join(parts) or "nothing"
+
+
 def plan_table(plan: Plan) -> Group:
     table = Table(box=box.SIMPLE_HEAD, show_edge=False)
     table.add_column("Episode" if plan.title.type == "series" else "")
@@ -132,8 +144,11 @@ def plan_table(plan: Plan) -> Group:
                 notes.append("/".join(c.languages))
             if c.hdr:
                 notes.append(" ".join(c.hdr))
+            if c.is_direct and c.md5:
+                notes.append("md5-checked")
             sort_key = t.refs[0] if t.refs else None
-            rows.append((sort_key, (t.label, c.release, c.resolution, str(c.seeders),
+            seeds = "direct" if c.is_direct else str(c.seeders)  # no swarm for a direct download
+            rows.append((sort_key, (t.label, c.release, c.resolution, seeds,
                                     human_size(t.size), c.source, ", ".join(notes))))  # fmt: skip
     for key, reason in plan.missing.items():
         rows.append((key, ("movie" if key is None else key.code, f"[red]{reason}[/]",
@@ -157,8 +172,8 @@ def plan_table(plan: Plan) -> Group:
         table.add_row(*row)
 
     summary = Text()
-    summary.append(f"{plan.file_count} files", style="bold")
-    summary.append(f" from {len(plan.jobs)} torrent{'s' if len(plan.jobs) != 1 else ''}")
+    summary.append(f"{plan.file_count} file{'s' if plan.file_count != 1 else ''}", style="bold")
+    summary.append(f" from {sources_phrase(plan.jobs)}")
     summary.append(f" · {human_size(plan.total_size)}")
     if plan.missing:
         summary.append(f" · {len(plan.missing)} unavailable", style="red")
