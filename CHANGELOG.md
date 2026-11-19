@@ -16,6 +16,10 @@ working for this release.
   it with the reason. Plex names (reusing existing folders), a Plex section refresh, subtitle
   sidecars, a JSON-lines log and v1's exit codes (0/10/20/1). A port of the MediaPipeline v1
   PowerShell rules that matches all 60 recorded cases word for word.
+- **Subtitles** (`cinemind subtitles`): searches Wizdom (Hebrew) and OpenSubtitles, then
+  checks each candidate against the video's speech before saving it. A late subtitle, or one
+  timed for 25 fps, is retimed; one for another cut or film is skipped. Saved as UTF-8 SRT
+  (Windows-1255 Hebrew is converted). A numpy port of MediaPipeline v1's sync check.
 - `cinemind secrets` stores tokens and passwords in the system keyring (or `CINEMIND_*`
   environment variables), never in config.toml.
 - **MCP server** (`cinemind mcp`, `mcp` extra): an AI assistant can search, plan and, with a

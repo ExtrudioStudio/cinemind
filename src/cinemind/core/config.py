@@ -164,6 +164,13 @@ class Config(BaseModel):
     ffprobe_path: str = ""
     file_unlock_timeout: int = 120
 
+    # Subtitles (`cinemind subtitles`): Wizdom for Hebrew (no account), OpenSubtitles for any
+    # language (its API key and password are secrets). Each candidate is checked against the
+    # video's speech before it's saved.
+    subtitle_language: str = "en"
+    opensubtitles_username: str = ""
+    subtitle_max_candidates: int = 4
+
     # HTTP
     http_concurrency: int = 4
     http_timeout: float = 20.0

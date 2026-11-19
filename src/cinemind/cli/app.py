@@ -10,6 +10,7 @@ import sqlite3
 import sys
 from collections.abc import Coroutine
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Annotated, Any
 
 import tomli_w
@@ -527,6 +528,35 @@ def ingest_cmd(
         if result.plex:
             console.print(f"[dim]Plex: {result.plex.status} {escape(result.plex.detail or '')}[/]")
     raise typer.Exit(result.exit_code)
+
+
+@app.command("subtitles")
+def subtitles_cmd(
+    video: Annotated[Path, typer.Argument(help="The video file.")],
+    imdb: Annotated[str, typer.Option("--imdb", help="The title's IMDb id, tt…")],
+    season: Annotated[int | None, typer.Option("--season")] = None,
+    episode: Annotated[int | None, typer.Option("--episode")] = None,
+    lang: Annotated[str | None, typer.Option("--lang", help="e.g. he, en")] = None,
+    out: Annotated[Path | None, typer.Option("--out", help="Where to save it.")] = None,
+    no_sync_check: Annotated[bool, typer.Option("--no-sync-check")] = False,
+) -> None:
+    """Find a subtitle whose timing matches the video's speech, and save it next to the video.
+    Exit code 0 when one was saved, 1 when none fitted."""
+    from cinemind.subtitles.finder import find_for_video
+
+    if not video.is_file():
+        raise typer.BadParameter(f"{video} doesn't exist", param_hint="VIDEO")
+    result = asyncio.run(find_for_video(_cfg(), video, imdb, season, episode, lang, out,
+                                        sync_check=not no_sync_check))  # fmt: skip
+    for line in result.log:
+        console.print(f"[dim]{escape(line)}[/]")
+    if result.status == "found":
+        sync = result.sync.status if result.sync else "not checked"
+        console.print(f"[green]Saved[/] {escape(str(result.path))} [dim]({result.source}: "
+                      f"{escape(result.release or '')}; sync {sync})[/]")  # fmt: skip
+        return
+    console.print(f"[yellow]No subtitle saved:[/] {escape(result.reason or '')}")
+    raise typer.Exit(1)
 
 
 @secrets_app.command("set")

@@ -209,6 +209,31 @@ cases from it (23 real files, 37 synthetic, one per rule) give the same verdict,
 including the exact FFmpeg arguments. The bundled profile is `samsung-q60b`; set
 `ingest_profile` to a JSON file of your own for another TV.
 
+## Subtitles that match the audio
+
+A subtitle with the right name can still be for another cut, or a few seconds late.
+`cinemind subtitles` doesn't trust names alone: it checks each candidate against the video's
+**speech**.
+
+```powershell
+cinemind subtitles "Film (2010).mkv" --imdb tt1375666 --lang he
+cinemind subtitles episode.mkv --imdb tt0388629 --season 1 --episode 2   # subtitle_language
+```
+
+1. Candidates come from Wizdom (Hebrew, no account) and OpenSubtitles (any language; set
+   `opensubtitles_username`, then `cinemind secrets set opensubtitles_api_key` and
+   `opensubtitles_password`). They are ranked by file-hash match, then by how close the
+   release name is to the video's. Cam releases are never downloaded.
+2. FFmpeg decodes a few 5-minute windows of the dialogue track (only the centre channel of a
+   5.1 mix). The subtitle's on/off timeline is slid across their speech energy, at the
+   original speed and at both 23.976 ↔ 25 fps speeds.
+3. A subtitle that lines up at the same shift in at least half the windows is saved as UTF-8
+   SRT next to the video (`Film (2010).he.srt`), **retimed** if it was early, late or at PAL
+   speed. One for another cut or film doesn't line up and is skipped.
+
+With no FFmpeg (or `--no-sync-check`), only a candidate with a matching hash or release name
+is used. When nothing fits, the exit code is 1 and the output lists what was tried and why.
+
 ## Stream sources
 
 `stream_sources` lists the sources to ask, in order (`cinemind sources` shows them):
@@ -304,6 +329,8 @@ extra_movie_roots = ['\\nas\Media\Movies']
 | `outgoing_interfaces` | (empty) | Bind torrents to a VPN adapter so traffic can't leak |
 | `llm_enabled`, `llm_model`, `llm_effort` | `true`, `claude-opus-5-5`, `low` | Plain-language requests |
 | `mcp_max_plan_gb`, `mcp_max_files`, `mcp_plan_ttl_minutes` | `60`, `60`, `15` | Limits for plans made through the MCP server |
+| `ingest_root`, `plex_url`, `ingest_profile` | (empty), (empty), `samsung-q60b` | See [Ingest](#ingest-make-every-file-play-directly-on-the-tv) |
+| `subtitle_language`, `opensubtitles_username` | `en`, (empty) | See [Subtitles](#subtitles-that-match-the-audio) |
 
 ## Development
 
