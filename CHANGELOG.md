@@ -11,6 +11,14 @@ and download history are copied from the stremio-dl folders, and the `sdl` comma
 working for this release.
 
 ### Added
+- **MCP server** (`cinemind mcp`, `mcp` extra): an AI assistant can search, plan and, with a
+  single-use plan id that expires, start downloads, then follow and pause them. Plans are
+  limited by size, file count and library paths; `--read-only` offers no side-effect tools;
+  every tool call is audited in `state.db`.
+- **Plain-language requests** (`cinemind ask`, `ai` extra): Claude reads a request into a typed
+  form that is resolved against the real season list. `get` falls back to it only when the
+  selection parser can't read the text. Every LLM call is logged with its token usage.
+- A headless service layer (`cinemind.service`) with a one-at-a-time background download queue.
 - **Stream sources.** Downloads come from pluggable sources (`stream_sources`, and
   `cinemind sources` to list them). Other packages can add one through the `cinemind.sources`
   entry point.
@@ -34,6 +42,7 @@ working for this release.
   `CINEMIND_BATCH_SIZE`).
 
 ### Fixed
+- Error messages no longer lose bracketed text such as `cinemind[torrent]` (Rich markup).
 - A file that finished downloading but couldn't be renamed into place (it stays `.part`) is
   now marked **failed**. Before, the job ended as "done" and the file was silently skipped.
 - An error while recording progress (for example a locked database) no longer stops every

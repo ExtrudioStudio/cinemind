@@ -24,6 +24,11 @@ Downloads come from **stream sources** that you choose:
   Torrentio configuration, to download torrents through libtorrent.
 - **Plugins**: other packages can add sources (see [Stream sources](#stream-sources)).
 
+You can also drive it from an AI assistant: `cinemind mcp` is an
+[MCP](https://modelcontextprotocol.io) server, so Claude can search, show you a plan, and
+download only after you agree. `cinemind ask "the last two seasons of Severance in 4K"` takes
+plain language (see [AI features](#ai-features)).
+
 ## Quick start
 
 Requires [uv](https://docs.astral.sh/uv/). From this folder:
@@ -43,10 +48,11 @@ Drop `--dry-run` to download it. `uv run cinemind shortcut` adds a desktop and S
 icon that opens the home menu, and `uv tool install ".[torrent]"` gives you a global
 `cinemind` command.
 
-Installing from a wheel or PyPI: `pip install cinemind` for direct downloads, or
-`pip install "cinemind[torrent]"` to add BitTorrent. libtorrent has wheels for Windows, macOS
-and Alpine (musl) Linux. On other Linux distributions, cinemind works without it, for direct
-downloads only.
+Installing from a wheel or PyPI: `pip install cinemind` for direct downloads, plus extras as
+needed. `torrent` adds BitTorrent; libtorrent has wheels for Windows, macOS and Alpine (musl)
+Linux, and on other distributions cinemind works without it. `ai` adds plain-language
+requests, `mcp` adds the MCP server, and `all` adds everything:
+`pip install "cinemind[all]"`.
 
 The first run creates `%APPDATA%\cinemind\config.toml`. **Upgrading from stremio-dl:** your
 `config.toml` and download history are copied over on the first run (the old files stay
@@ -84,6 +90,8 @@ Other commands:
 
 | Command | What it does |
 |---|---|
+| `cinemind ask "REQUEST"` | Find, plan and download from plain language (see [AI features](#ai-features)) |
+| `cinemind mcp` | Run the MCP server for an AI assistant (see [AI features](#ai-features)) |
 | `cinemind search "the office"` | List matching titles |
 | `cinemind info tt0063350` | Seasons, episode counts and sampled resolutions |
 | `cinemind status` | Download jobs, their progress, and how their post-download commands ended |
@@ -109,6 +117,67 @@ Quality words: `4k`/`uhd`, `1440p`/`2k`, `1080p`/`full hd`/`fhd`, `720p`/`hd`, `
 
 In Git Bash, an argument that *starts* with `/` (like `"/4k"`) gets rewritten into a
 Windows path; use `@4k`, `-q 4k` or plain `4k` there. PowerShell and cmd are fine.
+
+## AI features
+
+Both need Anthropic API credentials: `ANTHROPIC_API_KEY`, or `ant auth login`. Without them
+everything else works, and the selection syntax above still does.
+
+### Plain-language requests
+
+```powershell
+cinemind ask "the last two seasons of Severance in 4K" --dry-run
+cinemind get "Friends" "the very first season in hd"     # words the parser can't read
+```
+
+```
+Read as Severance (2022) s2-s3 /2160p
+```
+
+The deterministic parser always goes first, and Claude is only called when it can't read the
+text. Even then, the model doesn't pick episodes or files. It fills in a small typed form
+(title, scope such as "last 2 seasons", quality), and cinemind resolves that against the
+title's real season list. The result is checked by the same parser and shown as selection
+syntax ("Read as ..."), so you can see and reuse exactly what it understood. Every call is
+logged with its token usage in `state.db` (`llm_calls`). The model is `llm_model`
+(`claude-opus-5-5` by default, at `llm_effort` `low`).
+
+### Use from an AI assistant (MCP)
+
+`cinemind mcp` runs an [MCP](https://modelcontextprotocol.io) server on stdio.
+`cinemind mcp --print-config` prints the entry for Claude Desktop's
+`claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "cinemind": { "command": "C:\\path\\to\\.venv\\Scripts\\python.exe", "args": ["-m", "cinemind", "mcp"] }
+  }
+}
+```
+
+| Tool | |
+|---|---|
+| `search_titles`, `title_info` | Find a title and its seasons |
+| `plan_download`, `plan_request` | Build a plan from a selection or a plain-language request. Downloads nothing. |
+| `start_download` | Start a plan by its `plan_id` |
+| `job_status`, `list_jobs`, `pause_job`, `resume_job` | Follow and control jobs |
+
+Guardrails:
+
+- **Two-phase confirmation.** `start_download` only accepts a `plan_id` from a plan made in
+  the same session. It works once and expires after `mcp_plan_ttl_minutes` (15), so the
+  assistant has to show you a current plan before anything downloads.
+- **Limits.** Plans over `mcp_max_plan_gb` (60) or `mcp_max_files` (60) are refused, and
+  every file must land inside your library roots.
+- **Read-only mode.** `cinemind mcp --read-only` doesn't offer the tools that change anything.
+- **Audit.** Every tool call is recorded in `state.db` (`tool_calls`) with its outcome.
+- **Untrusted text.** Titles and release names come from third parties. The server's
+  instructions tell the assistant to treat them as data, never as instructions.
+
+Downloads run in the background, one job at a time, while the server runs. If the
+assistant closes the server, the running job is paused with its progress saved, and
+`cinemind resume` (or `resume_job`) continues it.
 
 ## Stream sources
 
@@ -203,6 +272,8 @@ extra_movie_roots = ['\\nas\Media\Movies']
 | `max_active_torrents`, `max_active_http` | `3`, `2` | Downloads running at once |
 | `seed_ratio` | `0` | Seed after finishing until this upload ratio |
 | `outgoing_interfaces` | (empty) | Bind torrents to a VPN adapter so traffic can't leak |
+| `llm_enabled`, `llm_model`, `llm_effort` | `true`, `claude-opus-5-5`, `low` | Plain-language requests |
+| `mcp_max_plan_gb`, `mcp_max_files`, `mcp_plan_ttl_minutes` | `60`, `60`, `15` | Limits for plans made through the MCP server |
 
 ## Development
 
@@ -224,7 +295,12 @@ plain Ubuntu install works without libtorrent. See [CONTRIBUTING.md](CONTRIBUTIN
 | `cinemind.planning` | Selection syntax, quality, filtering and ranking, the download plan, library paths |
 | `cinemind.engines` | Direct HTTP and BitTorrent engines, run side by side |
 | `cinemind.pipeline` | Running a plan, the post-download hand-off and its wrapper |
+| `cinemind.service` | Headless find, plan and background downloads, shared by the CLI and the MCP server |
+| `cinemind.ai` | The Claude wrapper (structured output, error mapping, usage log) and request reading |
+| `cinemind.mcp` | The MCP server and its guardrails |
 | `cinemind.cli` | Command line, home menu, wizard and terminal UI |
+
+Design decisions are recorded in [docs/adr](docs/adr).
 
 ## A word of caution
 

@@ -34,6 +34,7 @@ class DownloadRunner:
         self.batch = new_batch("job", job_id)  # this run's files form one batch for that command
         self.batch_size = sum(len(job.targets) for job in plan.jobs)
         self._hooks: list[subprocess.Popen[bytes]] = []  # running hand-off wrappers
+        self.views: list[JobView] = []  # the latest progress snapshot
 
     # -- EngineListener --------------------------------------------------------------------
 
@@ -93,23 +94,36 @@ class DownloadRunner:
 
     # -- running ---------------------------------------------------------------------------
 
-    async def run(self, torrents: list[tuple[TorrentJob, bytes | None]]) -> str:
+    async def run(
+        self, torrents: list[tuple[TorrentJob, bytes | None]], display: bool = True
+    ) -> str:
+        """Download the job's open torrents and direct downloads; return the job's final status.
+
+        With ``display=False`` nothing is printed (the MCP server talks over stdout); the
+        latest progress is kept in :attr:`views` instead.
+        """
         self.batch_size = sum(len(job.targets) for job, _ in torrents) or self.batch_size
         for job, resume in torrents:
             self.engine.add_job(job, resume)
-        with Live(progress_table([]), console=console, refresh_per_second=4) as live:
+        live = Live(progress_table([]), console=console, refresh_per_second=4) if display else None
 
-            def tick(views: list[JobView]) -> None:
+        def tick(views: list[JobView]) -> None:
+            self.views = views
+            if live is not None:
                 live.update(progress_table(views))
-                self.reap()
+            self.reap()
 
-            try:
-                await self.engine.run(on_tick=tick)
-            except asyncio.CancelledError:
-                self.store.pause_open(self.job_id)
-                self.store.finish_job(self.job_id)
-                raise
-            finally:
-                self.engine.shutdown(save_resume=True)  # no-op when run() already shut down
-                self.reap()
+        if live is not None:
+            live.start()
+        try:
+            await self.engine.run(on_tick=tick)
+        except asyncio.CancelledError:
+            self.store.pause_open(self.job_id)
+            self.store.finish_job(self.job_id)
+            raise
+        finally:
+            self.engine.shutdown(save_resume=True)  # no-op when run() already shut down
+            self.reap()
+            if live is not None:
+                live.stop()
         return self.store.finish_job(self.job_id)

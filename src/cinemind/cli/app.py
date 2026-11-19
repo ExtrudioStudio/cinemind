@@ -13,8 +13,11 @@ from typing import Annotated, Any
 
 import tomli_w
 import typer
+from rich.markup import escape
 
-from cinemind import __version__
+from cinemind import __version__, service
+from cinemind.ai.intent import best_match, read_request, selection_text, understand_selection
+from cinemind.ai.llm import LLM, SETUP_HINT, LLMError
 from cinemind.cli.home import run_home
 from cinemind.cli.shortcut import create_shortcuts
 from cinemind.cli.ui import console, plan_table, search_table, selection_line, status_table
@@ -40,11 +43,13 @@ from cinemind.core.config import (
     save_config,
     set_value,
 )
-from cinemind.core.models import MediaType
+from cinemind.core.models import MediaType, Title
 from cinemind.core.store import Store
 from cinemind.pipeline.postprocess import hand_off_job, log_folder, new_batch
+from cinemind.planning.planner import Plan
 from cinemind.planning.quality import parse_quality
-from cinemind.planning.selection import SelectionError, parse_selection, split_spec
+from cinemind.planning.selection import Selection, SelectionError, parse_selection, split_spec
+from cinemind.service import Session
 from cinemind.sources.registry import available
 from cinemind.sources.stremio.catalog import search
 from cinemind.sources.stremio.client import AddonError
@@ -87,8 +92,8 @@ def _run(coro: Coroutine[Any, Any, None]) -> None:
     except Cancelled:
         console.print("Cancelled.")
         raise typer.Exit(1) from None
-    except (AddonError, SelectionError, ValueError) as exc:
-        console.print(f"[red]{exc}[/]")
+    except (AddonError, SelectionError, ValueError, LookupError, LLMError) as exc:
+        console.print(f"[red]{escape(str(exc))}[/]")
         raise typer.Exit(1) from None
 
 
@@ -115,7 +120,7 @@ def _cfg() -> Config:
     try:
         return load_config()
     except Exception as exc:
-        console.print(f"[red]Could not read {config_path()}: {exc}[/]")
+        console.print(f"[red]Could not read {config_path()}: {escape(str(exc))}[/]")
         raise typer.Exit(1) from None
 
 
@@ -131,7 +136,7 @@ def main_callback(
     try:
         carried = migrate_legacy_files()
     except (OSError, sqlite3.Error) as exc:
-        console.print(f"[yellow]Could not copy your stremio-dl settings: {exc}[/]")
+        console.print(f"[yellow]Could not copy your stremio-dl settings: {escape(str(exc))}[/]")
         carried = []
     if carried:
         console.print("[cyan]Copied your stremio-dl settings and download history to cinemind:[/] "
@@ -203,32 +208,110 @@ def get_cmd(
         media = "series"  # "s1e5"-style input only makes sense for a show
 
     async def go() -> None:
-        async with open_session(cfg) as sess:
-            title = await pick_title(sess, query, media, first=first, prompt=prompt)
-            if title is None:
-                raise typer.Exit(1)
-            text = selection
-            if text is None:
-                if title.type == "series" and not prompt:
-                    raise ValueError('Give an episode selection, e.g. "s1e1-5 /1080p".')
-                if title.type == "series":
-                    await show_overview(sess, title)
-                    picked = await ask_selection(sess, title)
+        store = Store(data_dir() / "state.db")  # records LLM calls, if any are made
+        try:
+            async with open_session(cfg) as sess:
+                title = await pick_title(sess, query, media, first=first, prompt=prompt)
+                if title is None:
+                    raise typer.Exit(1)
+                text = selection
+                if text is None:
+                    if title.type == "series" and not prompt:
+                        raise ValueError('Give an episode selection, e.g. "s1e1-5 /1080p".')
+                    if title.type == "series":
+                        await show_overview(sess, title)
+                        picked = await ask_selection(sess, title)
+                    else:
+                        picked = parse_selection("", title, cfg.default_quality)
                 else:
-                    picked = parse_selection("", title, cfg.default_quality)
-            else:
+                    picked = await _read_selection(text, title, cfg, store)
+                plan = await _plan_and_confirm(sess, title, picked, quality=quality,
+                                               prompt=prompt, yes=yes, dry_run=dry_run,
+                                               prefer_packs=prefer_packs)  # fmt: skip
+        finally:
+            store.close()
+        if plan is not None:
+            await download(cfg, plan)
+
+    _run(go())
+
+
+async def _read_selection(text: str, title: Title, cfg: Config, store: Store) -> Selection:
+    """The parser's reading of a selection, or the model's when the parser can't read it."""
+    llm = LLM.from_config(cfg, store)
+    try:
+        picked, read_as = await understand_selection(text, title, cfg.default_quality, llm)
+    except SelectionError as exc:
+        if llm is None:
+            raise SelectionError(f"{exc} For plain-language selections: {SETUP_HINT}") from exc
+        raise
+    if read_as:
+        console.print(f"[dim]Read “{text}” as[/] [cyan]{read_as}[/]")
+    return picked
+
+
+async def _plan_and_confirm(
+    sess: Session,
+    title: Title,
+    picked: Selection,
+    *,
+    quality: str | None,
+    prompt: bool,
+    yes: bool,
+    dry_run: bool,
+    prefer_packs: bool | None,
+) -> Plan | None:
+    """Show the selection and the plan; return the plan to download, or None to stop."""
+    cfg = sess.cfg
+    if quality:
+        picked.quality = parse_quality(quality)
+    if title.type == "series":
+        console.print(selection_line(picked.refs, picked.quality or cfg.default_quality))
+    plan = await make_plan(sess, title, picked, prompt=prompt, prefer_packs=prefer_packs)
+    if dry_run:
+        console.print(plan_table(plan))
+        return None
+    if not await confirm_plan(sess, plan, prompt=prompt, assume_yes=yes):
+        return None
+    return plan
+
+
+@app.command("ask")
+def ask_cmd(
+    request: Annotated[str, typer.Argument(help='e.g. "the last two seasons of Severance in 4K"')],
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Don't ask for confirmation.")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show the plan only.")] = False,
+) -> None:
+    """Find, plan and download from a plain-language request (uses Claude)."""
+    cfg = _cfg()
+    prompt = interactive() and not yes
+
+    async def go() -> None:
+        store = Store(data_dir() / "state.db")
+        try:
+            llm = LLM.from_config(cfg, store)
+            if llm is None:
+                raise ValueError(f"`cinemind ask` reads requests with Claude. {SETUP_HINT}")
+            with console.status("Reading the request…"):
+                read = await read_request(llm, request)
+            async with open_session(cfg) as sess:
+                kind = None if read.media_type == "unknown" else read.media_type
+                results = await service.search_titles(sess, read.title, kind)
+                match = best_match(results, read)
+                if match is None:
+                    raise ValueError(f"Nothing found for “{read.title}”.")
+                title = await service.load_title(sess, match.id, match.type)
+                text = selection_text(read, title)
                 picked = parse_selection(text, title, cfg.default_quality)
-            if quality:
-                picked.quality = parse_quality(quality)
-            if title.type == "series":
-                console.print(selection_line(picked.refs, picked.quality or cfg.default_quality))
-            plan = await make_plan(sess, title, picked, prompt=prompt, prefer_packs=prefer_packs)
-            if dry_run:
-                console.print(plan_table(plan))
-                return
-            if not await confirm_plan(sess, plan, prompt=prompt, assume_yes=yes):
-                return
-        await download(cfg, plan)
+                console.print(f"[dim]Read as[/] [bold]{title.name}[/] ({match.release_info}) "
+                              f"[cyan]{text or 'the movie'}[/]")  # fmt: skip
+                plan = await _plan_and_confirm(sess, title, picked, quality=None,
+                                               prompt=prompt, yes=yes, dry_run=dry_run,
+                                               prefer_packs=None)  # fmt: skip
+        finally:
+            store.close()
+        if plan is not None:
+            await download(cfg, plan)
 
     _run(go())
 
@@ -273,7 +356,7 @@ def handoff_cmd(
         started = hand_off_job(cfg, plan.title, torrents, new_batch("handoff", job_id),
                                store=store, job_id=job_id)  # fmt: skip
     except KeyError as exc:
-        console.print(f"[red]{exc.args[0]}[/]")
+        console.print(f"[red]{escape(str(exc.args[0]))}[/]")
         raise typer.Exit(1) from None
     finally:
         store.close()
@@ -298,7 +381,7 @@ def shortcut_cmd(
     try:
         paths = create_shortcuts(start_menu=start_menu)
     except RuntimeError as exc:
-        console.print(f"[red]{exc}[/]")
+        console.print(f"[red]{escape(str(exc))}[/]")
         raise typer.Exit(1) from None
     for path in paths:
         console.print(f"Created [bold]{path}[/]")
@@ -326,7 +409,7 @@ def config_set(
     try:
         cfg = set_value(_cfg(), key, value)
     except (KeyError, ValueError) as exc:
-        console.print(f"[red]{exc.args[0] if exc.args else exc}[/]")
+        console.print(f"[red]{escape(str(exc.args[0] if exc.args else exc))}[/]")
         raise typer.Exit(1) from None
     save_config(cfg)
     console.print(f"{key} = {getattr(cfg, key)!r}", markup=False)
@@ -340,6 +423,31 @@ STREAM_ADDON_NOTICE = (
     "illegal in many countries, and torrent peers can see your IP address. Only download "
     "content you have the right to."
 )
+
+
+@app.command("mcp")
+def mcp_cmd(
+    read_only: Annotated[
+        bool, typer.Option("--read-only", help="Only search and plan; never start downloads.")
+    ] = False,
+    print_config: Annotated[
+        bool, typer.Option("--print-config", help="Print a Claude Desktop config entry and exit.")
+    ] = False,
+) -> None:
+    """Run the MCP server on stdio, so an AI assistant can find, plan and download."""
+    if print_config:
+        args = ["-m", "cinemind", "mcp", *(["--read-only"] if read_only else [])]
+        entry = {"mcpServers": {"cinemind": {"command": sys.executable, "args": args}}}
+        console.print_json(data=entry)
+        return
+    try:
+        from cinemind.mcp.server import create_server
+    except ImportError:
+        console.print("[red]The MCP server needs the mcp extra:[/] "
+                      + escape("pip install 'cinemind[mcp]'"))  # fmt: skip
+        raise typer.Exit(1) from None
+    console.file = sys.stderr  # stdout carries the protocol; nothing else may write there
+    create_server(cfg=_cfg(), read_only=read_only).run("stdio")
 
 
 @app.command("sources")

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import questionary
 import typer
+from rich.markup import escape
 from rich.rule import Rule
 
 from cinemind import __version__
@@ -32,7 +33,7 @@ def _load_config() -> Config:
     try:
         return load_config()
     except Exception as exc:
-        console.print(f"[red]Could not read {config_path()}: {exc}[/]")
+        console.print(f"[red]Could not read {config_path()}: {escape(str(exc))}[/]")
         console.print("[yellow]Using default settings; fix the file under Settings.[/]")
         return Config()
 
@@ -116,9 +117,9 @@ def run_home() -> None:
         except Cancelled:
             console.print("Cancelled.")
         except (AddonError, SelectionError, ValueError) as exc:
-            console.print(f"[red]{exc}[/]")
+            console.print(f"[red]{escape(str(exc))}[/]")
         except Exception as exc:
             log.exception("Unexpected error in the home menu")
-            console.print(f"[red]Something went wrong: {exc}[/]")
+            console.print(f"[red]Something went wrong: {escape(str(exc))}[/]")
             console.print(f"[dim]Details are in the log: {log_dir() / 'cinemind.log'}[/]")
         console.print()

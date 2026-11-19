@@ -6,13 +6,14 @@ import sys
 from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import questionary
+from rich.markup import escape
 from rich.status import Status
 
+from cinemind import service
 from cinemind.cli.ui import (
     console,
     human_size,
@@ -22,22 +23,16 @@ from cinemind.cli.ui import (
     selection_line,
     title_overview,
 )
-from cinemind.core.config import Config, cache_dir, data_dir, log_dir
+from cinemind.core.config import Config, data_dir, log_dir
 from cinemind.core.models import Key, MediaType, Title
 from cinemind.core.store import Store
 from cinemind.pipeline.postprocess import log_folder
 from cinemind.pipeline.runner import DownloadRunner
 from cinemind.planning import quality as q
 from cinemind.planning.library import free_space
-from cinemind.planning.planner import Plan, build_plan
+from cinemind.planning.planner import Plan
 from cinemind.planning.selection import Selection, SelectionError, parse_selection
-from cinemind.planning.streams import StreamResolver
-from cinemind.sources.base import SourceContext
-from cinemind.sources.registry import load_sources
-from cinemind.sources.stremio.cache import JsonCache
-from cinemind.sources.stremio.catalog import search
-from cinemind.sources.stremio.client import Addon, AddonClient, AddonError
-from cinemind.sources.stremio.metadata import fetch_title
+from cinemind.service import Session
 
 SYNTAX_HINT = (
     "Examples: [cyan]s1[/]  ·  [cyan]s1e5[/]  ·  [cyan]s1 eps10 - s2 eps 3[/]  ·  "
@@ -53,33 +48,21 @@ class Cancelled(Exception):
     """The user backed out of a prompt."""
 
 
-@dataclass
-class Session:
-    cfg: Config
-    client: AddonClient
-    meta_addons: list[Addon]
-    resolver: StreamResolver
-
-
-async def _stream_addons(client: AddonClient, cfg: Config) -> list[Addon]:
-    """The configured Stremio stream addons. Unlike metadata, they are optional."""
-    if not cfg.stream_addons:
-        return []
-    try:
-        return await client.load_all(cfg.stream_addons)
-    except AddonError as exc:
-        console.print(f"[yellow]{exc}[/] Continuing with the other sources.")
-        return []
-
-
 @asynccontextmanager
 async def open_session(cfg: Config) -> AsyncIterator[Session]:
-    async with AddonClient(cfg, JsonCache(cache_dir() / "http")) as client:
-        with Status("Loading addons…", console=console):
-            meta_addons = await client.load_all(cfg.meta_addons)
-            stream_addons = await _stream_addons(client, cfg)
-        sources = load_sources(cfg.stream_sources, SourceContext(cfg, client, stream_addons))
-        yield Session(cfg, client, meta_addons, StreamResolver(sources, cfg))
+    """A :func:`cinemind.service.open_session`, with a spinner while the addons load."""
+    status = Status("Loading addons…", console=console)
+    status.start()
+
+    def warn(message: str) -> None:
+        console.print(f"[yellow]{escape(message)}[/]")
+
+    try:
+        async with service.open_session(cfg, warn=warn) as sess:
+            status.stop()
+            yield sess
+    finally:
+        status.stop()
 
 
 def interactive() -> bool:
@@ -103,20 +86,15 @@ async def pick_title(
     first: bool = False,
     prompt: bool = True,
 ) -> Title | None:
-    if query.startswith("tt") and query[2:].isdigit():
-        types: list[MediaType] = [type_] if type_ else ["series", "movie"]
-        for t in types:
-            try:
-                return await fetch_title(sess.client, sess.meta_addons, t, query,
-                                         sess.cfg.include_specials)  # fmt: skip
-            except Exception:
-                continue
-        console.print(f"[red]No metadata found for {query}.[/]")
-        return None
+    if service.is_imdb_id(query):
+        try:
+            return await service.load_title(sess, query, type_)
+        except LookupError as exc:
+            console.print(f"[red]{escape(str(exc))}.[/]")
+            return None
 
     with Status(f"Searching for “{query}”…", console=console):
-        results = await search(sess.client, sess.meta_addons, query,
-                               (type_,) if type_ else ("series", "movie"))  # fmt: skip
+        results = await service.search_titles(sess, query, type_)
     if not results:
         console.print(f"[yellow]Nothing found for “{query}”.[/]")
         return None
@@ -136,8 +114,7 @@ async def pick_title(
         chosen = exact[0]
 
     with Status(f"Loading {chosen.name}…", console=console):
-        return await fetch_title(sess.client, sess.meta_addons, chosen.type, chosen.id,
-                                 sess.cfg.include_specials)  # fmt: skip
+        return await service.load_title(sess, chosen.id, chosen.type)
 
 
 # -- step 2: overview ------------------------------------------------------------------------
@@ -178,7 +155,7 @@ async def ask_selection(sess: Session, title: Title) -> Selection:
         try:
             selection = parse_selection(text, title, sess.cfg.default_quality)
         except (SelectionError, ValueError) as exc:
-            console.print(f"[red]{exc}[/]")
+            console.print(f"[red]{escape(str(exc))}[/]")
             continue
         console.print(selection_line(selection.refs, selection.quality or ""))
         return selection
@@ -195,25 +172,22 @@ async def make_plan(
     prefer_packs: bool | None = None,
 ) -> Plan:
     cfg = sess.cfg
-    requested = selection.quality or cfg.default_quality
-    keys: list[Key] = list(selection.refs) if title.type == "series" else [None]
+    total = len(selection.refs) if title.type == "series" else 1
     done = 0
     with Status("Finding streams…", console=console) as status:
 
         def progress(_key: Key) -> None:
             nonlocal done
             done += 1
-            status.update(f"Finding streams… {done}/{len(keys)}")
+            status.update(f"Finding streams… {done}/{total}")
 
-        candidates = await sess.resolver.all_candidates(title, keys, on_progress=progress)
+        offers = await service.find_offers(sess, title, selection, on_progress=progress)
 
-    packs = cfg.prefer_packs if prefer_packs is None else prefer_packs
+    requested = offers.requested
     on_missing = "skip" if cfg.on_missing == "ask" else cfg.on_missing
-    plan = build_plan(title, keys, candidates, cfg, requested, on_missing, packs)
+    plan = offers.plan(cfg, on_missing, prefer_packs)
 
-    lower_available = [
-        k for k, reason in plan.missing.items() if reason.startswith(f"no {requested} streams")
-    ]
+    lower_available = offers.missing_at_requested(plan)
     if cfg.on_missing == "ask" and lower_available and requested != q.BEST:
         n = len(lower_available)
         what = "This title has" if title.type == "movie" else f"{n} episode{'s' if n > 1 else ''}"
@@ -232,7 +206,7 @@ async def make_plan(
                 '(set on_missing = "lower" to fall back automatically).[/]'
             )
         if use_lower:
-            plan = build_plan(title, keys, candidates, cfg, requested, "lower", packs)
+            plan = offers.plan(cfg, "lower", prefer_packs)
     return plan
 
 

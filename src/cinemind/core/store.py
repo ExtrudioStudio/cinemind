@@ -72,7 +72,34 @@ CREATE TABLE IF NOT EXISTS handoffs (
 CREATE INDEX IF NOT EXISTS handoffs_job ON handoffs (job_id);
 """
 
-MIGRATIONS = (SCHEMA_V1, SCHEMA_V2)
+# Version 3: why a job failed outright, an audit trail of agent (MCP) tool calls, and every LLM
+# call with its token usage, so cost and behaviour can be reviewed afterwards.
+SCHEMA_V3 = """
+ALTER TABLE jobs ADD COLUMN error TEXT;
+CREATE TABLE IF NOT EXISTS tool_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    arguments TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    detail TEXT
+);
+CREATE TABLE IF NOT EXISTS llm_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    outcome TEXT NOT NULL,
+    request_id TEXT
+);
+"""
+
+MIGRATIONS = (SCHEMA_V1, SCHEMA_V2, SCHEMA_V3)
 SCHEMA_VERSION = len(MIGRATIONS)
 
 OPEN_TORRENT = ("queued", "active", "paused")
@@ -97,6 +124,7 @@ class JobRow:
     updated: str
     counts: dict[str, int]
     handoffs: dict[str, int] = field(default_factory=dict)  # HandoffRow.state -> count
+    error: str | None = None  # why the whole job failed, when it did
 
 
 @dataclass
@@ -236,7 +264,7 @@ class Store:
     def jobs(self, include_finished: bool = True, limit: int = 30) -> list[JobRow]:
         sql = "SELECT * FROM jobs"
         if not include_finished:
-            sql += " WHERE status IN ('running', 'paused')"
+            sql += " WHERE status IN ('queued', 'running', 'paused')"
         rows = self.db.execute(sql + " ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         out = []
         for r in rows:
@@ -256,8 +284,29 @@ class Store:
                 ).fetchall()
             )
             out.append(JobRow(r["id"], r["title"], r["type"], r["quality"], r["status"],
-                              r["created"], r["updated"], counts, handoffs))  # fmt: skip
+                              r["created"], r["updated"], counts, handoffs,
+                              r["error"]))  # fmt: skip
         return out
+
+    def job(self, job_id: int) -> JobRow:
+        """One job (finished or not); KeyError when there is no such job."""
+        for row in self.jobs(limit=-1):
+            if row.id == job_id:
+                return row
+        raise KeyError(f"No download job #{job_id}")
+
+    def fail_job(self, job_id: int, error: str) -> None:
+        """Mark a job failed as a whole (it could not run at all), with the reason."""
+        with self._tx():
+            self.db.execute(
+                "UPDATE jobs SET status = 'failed', error = ?, updated = ? WHERE id = ?",
+                (error, _now(), job_id),
+            )
+            self.db.execute(
+                "UPDATE torrents SET status = 'dead', error = ?, updated = ? "
+                "WHERE job_id = ? AND status IN ('queued', 'active', 'paused')",
+                (error, _now(), job_id),
+            )
 
     def finish_job(self, job_id: int) -> str:
         """Set the final status from the items' states and return it."""
@@ -280,6 +329,14 @@ class Store:
         return status
 
     # -- items -----------------------------------------------------------------------------
+
+    def items(self, job_id: int) -> list[dict[str, str | None]]:
+        """Each episode (or the movie) of a job: key, status, final_path, error."""
+        rows = self.db.execute(
+            "SELECT key, status, final_path, error FROM items WHERE job_id = ? ORDER BY key",
+            (job_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def set_item(
         self,
@@ -401,3 +458,46 @@ class Store:
             "SELECT * FROM handoffs WHERE job_id = ? ORDER BY id", (job_id,)
         ).fetchall()
         return [HandoffRow(**dict(r)) for r in rows]
+
+    # -- audit trail: agent tool calls and LLM calls -----------------------------------------
+
+    def log_tool_call(self, tool: str, arguments: str, outcome: str, detail: str = "") -> None:
+        with self._tx():
+            self.db.execute(
+                "INSERT INTO tool_calls (at, tool, arguments, outcome, detail) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (_now(), tool, arguments[:2000], outcome, detail[:2000]),
+            )
+
+    def tool_calls(self, limit: int = 50) -> list[dict[str, str]]:
+        rows = self.db.execute(
+            "SELECT * FROM tool_calls ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def log_llm_call(
+        self,
+        purpose: str,
+        model: str,
+        outcome: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+        latency_ms: int = 0,
+        request_id: str | None = None,
+    ) -> None:
+        with self._tx():
+            self.db.execute(
+                "INSERT INTO llm_calls (at, purpose, model, input_tokens, output_tokens, "
+                "cache_read_tokens, cache_write_tokens, latency_ms, outcome, request_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (_now(), purpose, model, input_tokens, output_tokens, cache_read_tokens,
+                 cache_write_tokens, latency_ms, outcome, request_id),
+            )  # fmt: skip
+
+    def llm_calls(self, limit: int = 50) -> list[dict[str, object]]:
+        rows = self.db.execute(
+            "SELECT * FROM llm_calls ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
