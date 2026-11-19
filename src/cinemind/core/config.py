@@ -151,6 +151,26 @@ class Config(BaseModel):
     # Direct (HTTP) downloads
     max_active_http: int = 2
 
+    # Ingest (`cinemind ingest`): check files against a TV profile, fix what can be fixed
+    # without re-encoding video, and file them for Plex. Empty ingest_root = off.
+    ingest_root: str = ""  # the library share, e.g. \\nas\Media
+    ingest_movies_dir: str = "Movies"
+    ingest_tv_dir: str = "TV Shows"
+    ingest_incoming_dir: str = "_incoming"
+    ingest_quarantine_dir: str = "_quarantine"
+    ingest_profile: str = "samsung-q60b"  # a bundled profile, or a path to your own JSON
+    plex_url: str = ""  # e.g. http://nas:32400; the token is a secret (`cinemind secrets`)
+    ffmpeg_path: str = ""  # empty = from PATH
+    ffprobe_path: str = ""
+    file_unlock_timeout: int = 120
+
+    # Subtitles (`cinemind subtitles`): Wizdom for Hebrew (no account), OpenSubtitles for any
+    # language (its API key and password are secrets). Each candidate is checked against the
+    # video's speech before it's saved.
+    subtitle_language: str = "en"
+    opensubtitles_username: str = ""
+    subtitle_max_candidates: int = 4
+
     # HTTP
     http_concurrency: int = 4
     http_timeout: float = 20.0

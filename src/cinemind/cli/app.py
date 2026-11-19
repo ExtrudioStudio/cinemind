@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import sqlite3
 import sys
 from collections.abc import Coroutine
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Annotated, Any
 
 import tomli_w
@@ -44,7 +46,10 @@ from cinemind.core.config import (
     set_value,
 )
 from cinemind.core.models import MediaType, Title
+from cinemind.core.secrets import KNOWN, SecretsUnavailable, delete_secret, get_secret, set_secret
 from cinemind.core.store import Store
+from cinemind.ingest.naming import Kind
+from cinemind.ingest.runner import Ingester, Media
 from cinemind.pipeline.postprocess import hand_off_job, log_folder, new_batch
 from cinemind.planning.planner import Plan
 from cinemind.planning.quality import parse_quality
@@ -57,11 +62,14 @@ from cinemind.sources.stremio.client import AddonError
 app = typer.Typer(
     add_completion=False,
     invoke_without_command=True,
-    help="Download movies and TV shows through Stremio addons. Run without a command for the "
-    "home menu.",
+    help="Find, fetch and file movies and TV shows into a Plex-ready library. Run without a "
+    "command for the home menu.",
 )
 config_app = typer.Typer(help="Show or change settings.", no_args_is_help=True)
 app.add_typer(config_app, name="config")
+secrets_app = typer.Typer(help="Store tokens and passwords in the system keyring.",
+                          no_args_is_help=True)  # fmt: skip
+app.add_typer(secrets_app, name="secrets")
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -469,6 +477,124 @@ def config_reset() -> None:
     """Restore the default settings."""
     save_config(Config())
     console.print(f"Defaults written to {config_path()}", markup=False)
+
+
+@app.command("ingest")
+def ingest_cmd(
+    path: Annotated[str, typer.Argument(help="A name in the incoming folder, or a path.")],
+    kind: Annotated[str, typer.Option("--kind", help="movie or episode")],
+    title: Annotated[str, typer.Option("--title", help="The movie or show name.")],
+    year: Annotated[int | None, typer.Option("--year")] = None,
+    imdb: Annotated[str | None, typer.Option("--imdb", help="tt…")] = None,
+    tmdb: Annotated[str | None, typer.Option("--tmdb")] = None,
+    tvdb: Annotated[str | None, typer.Option("--tvdb")] = None,
+    season: Annotated[int | None, typer.Option("--season")] = None,
+    episode: Annotated[int | None, typer.Option("--episode")] = None,
+    end_episode: Annotated[int | None, typer.Option("--end-episode")] = None,
+    episode_title: Annotated[str | None, typer.Option("--episode-title")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Change nothing.")] = False,
+    overwrite: Annotated[bool, typer.Option("--overwrite", help="Replace a file.")] = False,
+    keep_source: Annotated[bool, typer.Option("--keep-source", help="Keep it if fixed.")] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the result as JSON.")] = False,
+) -> None:  # fmt: skip
+    """Check a file against the TV profile, fix it if needed (video is never re-encoded) and
+    file it for Plex. Exit code: 0 placed, 10 fixed, 20 quarantined, 1 error."""
+    if kind not in ("movie", "episode"):
+        raise typer.BadParameter("use 'movie' or 'episode'", param_hint="--kind")
+    cfg = _cfg()
+    try:
+        ingester = Ingester.from_config(cfg)
+    except ValueError as exc:
+        console.print(f"[red]{escape(str(exc))}[/]")
+        raise typer.Exit(1) from None
+    media_kind: Kind = "movie" if kind == "movie" else "episode"
+    media = Media(media_kind, title, year=year, imdb=imdb, tmdb=tmdb, tvdb=tvdb,
+                  season=season, episode=episode, end_episode=end_episode,
+                  episode_title=episode_title)  # fmt: skip
+    result = asyncio.run(ingester.ingest(path, media, dry_run=dry_run, overwrite=overwrite,
+                                         keep_source=keep_source))  # fmt: skip
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2, default=str))
+    else:
+        colour = {"placed": "green", "fixed": "green", "quarantined": "yellow",
+                  "dry-run": "cyan"}.get(result.status, "red")  # fmt: skip
+        verdict = result.verdict.verdict if result.verdict else "-"
+        console.print(f"[{colour}]{result.status}[/] ({verdict}) → {escape(result.target or '')}")
+        if result.verdict:
+            for line in result.verdict.reasons + result.verdict.actions + result.verdict.warnings:
+                console.print(f"  · {escape(line)}")
+        if result.error:
+            console.print(f"[red]{escape(result.error)}[/]")
+        if result.plex:
+            console.print(f"[dim]Plex: {result.plex.status} {escape(result.plex.detail or '')}[/]")
+    raise typer.Exit(result.exit_code)
+
+
+@app.command("subtitles")
+def subtitles_cmd(
+    video: Annotated[Path, typer.Argument(help="The video file.")],
+    imdb: Annotated[str, typer.Option("--imdb", help="The title's IMDb id, tt…")],
+    season: Annotated[int | None, typer.Option("--season")] = None,
+    episode: Annotated[int | None, typer.Option("--episode")] = None,
+    lang: Annotated[str | None, typer.Option("--lang", help="e.g. he, en")] = None,
+    out: Annotated[Path | None, typer.Option("--out", help="Where to save it.")] = None,
+    no_sync_check: Annotated[bool, typer.Option("--no-sync-check")] = False,
+) -> None:
+    """Find a subtitle whose timing matches the video's speech, and save it next to the video.
+    Exit code 0 when one was saved, 1 when none fitted."""
+    from cinemind.subtitles.finder import find_for_video
+
+    if not video.is_file():
+        raise typer.BadParameter(f"{video} doesn't exist", param_hint="VIDEO")
+    result = asyncio.run(find_for_video(_cfg(), video, imdb, season, episode, lang, out,
+                                        sync_check=not no_sync_check))  # fmt: skip
+    for line in result.log:
+        console.print(f"[dim]{escape(line)}[/]")
+    if result.status == "found":
+        sync = result.sync.status if result.sync else "not checked"
+        console.print(f"[green]Saved[/] {escape(str(result.path))} [dim]({result.source}: "
+                      f"{escape(result.release or '')}; sync {sync})[/]")  # fmt: skip
+        return
+    console.print(f"[yellow]No subtitle saved:[/] {escape(result.reason or '')}")
+    raise typer.Exit(1)
+
+
+@secrets_app.command("set")
+def secrets_set(
+    name: Annotated[str, typer.Argument(help=f"One of: {', '.join(KNOWN)}")],
+    allow_hebrew: Annotated[
+        bool, typer.Option("--allow-hebrew", help="The value really contains Hebrew letters.")
+    ] = False,
+) -> None:
+    """Store a secret in the system keyring (the input is hidden)."""
+    if name not in KNOWN:
+        raise typer.BadParameter(f"use one of: {', '.join(KNOWN)}", param_hint="NAME")
+    value = typer.prompt(KNOWN[name], hide_input=True).strip()
+    # A hidden prompt can't show that the keyboard is on the Hebrew layout; it happened.
+    if not allow_hebrew and any("֐" <= ch <= "׿" for ch in value):
+        console.print("[red]That contains Hebrew letters: is the keyboard on the Hebrew layout?[/]"
+                      " Switch it and try again, or pass --allow-hebrew.")  # fmt: skip
+        raise typer.Exit(1)
+    try:
+        set_secret(name, value)
+    except SecretsUnavailable as exc:
+        console.print(f"[red]{escape(str(exc))}[/]")
+        raise typer.Exit(1) from None
+    console.print(f"Stored {name} in the system keyring.")
+
+
+@secrets_app.command("list")
+def secrets_list() -> None:
+    """Which secrets are set (never their values)."""
+    for name, what in KNOWN.items():
+        state = "[green]set[/]" if get_secret(name) else "[dim]not set[/]"
+        console.print(f"  {state}  {name}  [dim]{what}[/]")
+
+
+@secrets_app.command("delete")
+def secrets_delete(name: Annotated[str, typer.Argument()]) -> None:
+    """Remove a secret from the system keyring."""
+    console.print("Deleted." if delete_secret(name) else f"{name} wasn't stored.")
 
 
 def main() -> None:
