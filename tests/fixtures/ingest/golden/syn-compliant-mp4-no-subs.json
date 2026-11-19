@@ -1,0 +1,72 @@
+{
+    "id":  "syn-compliant-mp4-no-subs",
+    "kind":  "synthetic",
+    "note":  "MP4 with no subtitle streams stays MP4",
+    "extension":  ".mp4",
+    "probe":  {
+                  "streams":  [
+                                  {
+                                      "index":  0,
+                                      "codec_name":  "h264",
+                                      "profile":  "High",
+                                      "codec_type":  "video",
+                                      "width":  1920,
+                                      "height":  1080,
+                                      "pix_fmt":  "yuv420p",
+                                      "bits_per_raw_sample":  "8",
+                                      "r_frame_rate":  "24000/1001",
+                                      "avg_frame_rate":  "24000/1001",
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      }
+                                  },
+                                  {
+                                      "index":  1,
+                                      "codec_name":  "aac",
+                                      "profile":  "LC",
+                                      "codec_type":  "audio",
+                                      "channels":  2,
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "eng"
+                                               }
+                                  }
+                              ],
+                  "format":  {
+                                 "format_name":  "mov,mp4,m4a,3gp,3g2,mj2",
+                                 "duration":  "2640.000000",
+                                 "bit_rate":  "6000000"
+                             }
+              },
+    "expected":  {
+                     "verdict":  "COMPLIANT",
+                     "reasons":  [
+
+                                 ],
+                     "actions":  [
+
+                                 ],
+                     "warnings":  [
+
+                                  ],
+                     "video":  {
+                                   "index":  0,
+                                   "codec":  "h264",
+                                   "profile":  "High",
+                                   "width":  1920,
+                                   "height":  1080,
+                                   "fps":  23.976,
+                                   "bitDepth":  8,
+                                   "hdr":  "SDR"
+                               },
+                     "bitrateMbps":  6,
+                     "durationSec":  2640,
+                     "fixArgs":  null
+                 }
+}

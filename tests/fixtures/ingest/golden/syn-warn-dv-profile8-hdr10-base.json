@@ -1,0 +1,80 @@
+{
+    "id":  "syn-warn-dv-profile8-hdr10-base",
+    "kind":  "synthetic",
+    "note":  "Dolby Vision 8.1 plays its HDR10 base layer",
+    "extension":  ".mkv",
+    "probe":  {
+                  "streams":  [
+                                  {
+                                      "index":  0,
+                                      "codec_name":  "hevc",
+                                      "profile":  "Main 10",
+                                      "codec_type":  "video",
+                                      "width":  3840,
+                                      "height":  2160,
+                                      "pix_fmt":  "yuv420p10le",
+                                      "bits_per_raw_sample":  "10",
+                                      "r_frame_rate":  "24000/1001",
+                                      "avg_frame_rate":  "24000/1001",
+                                      "color_transfer":  "smpte2084",
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "side_data_list":  [
+                                                             {
+                                                                 "side_data_type":  "DOVI configuration record",
+                                                                 "dv_profile":  8,
+                                                                 "dv_bl_signal_compatibility_id":  1
+                                                             }
+                                                         ]
+                                  },
+                                  {
+                                      "index":  1,
+                                      "codec_name":  "eac3",
+                                      "codec_type":  "audio",
+                                      "channels":  6,
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "eng"
+                                               }
+                                  }
+                              ],
+                  "format":  {
+                                 "format_name":  "matroska,webm",
+                                 "duration":  "2640.000000",
+                                 "bit_rate":  "6000000"
+                             }
+              },
+    "expected":  {
+                     "verdict":  "COMPLIANT",
+                     "reasons":  [
+
+                                 ],
+                     "actions":  [
+
+                                 ],
+                     "warnings":  [
+                                      "Dolby Vision profile 8: the TV plays the HDR10/SDR base layer (no DV on Samsung)"
+                                  ],
+                     "video":  {
+                                   "index":  0,
+                                   "codec":  "hevc",
+                                   "profile":  "Main 10",
+                                   "width":  3840,
+                                   "height":  2160,
+                                   "fps":  23.976,
+                                   "bitDepth":  10,
+                                   "hdr":  "HDR10 (PQ)",
+                                   "dolbyVision":  "profile 8, base-layer compat 1"
+                               },
+                     "bitrateMbps":  6,
+                     "durationSec":  2640,
+                     "fixArgs":  null
+                 }
+}

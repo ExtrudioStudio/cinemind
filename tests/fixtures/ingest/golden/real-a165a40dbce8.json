@@ -1,0 +1,396 @@
+{
+    "id":  "real-a165a40dbce8",
+    "kind":  "real",
+    "note":  "",
+    "extension":  ".mkv",
+    "probe":  {
+                  "programs":  [
+
+                               ],
+                  "stream_groups":  [
+
+                                    ],
+                  "streams":  [
+                                  {
+                                      "index":  0,
+                                      "codec_name":  "hevc",
+                                      "profile":  "Main 10",
+                                      "codec_type":  "video",
+                                      "width":  1920,
+                                      "height":  1080,
+                                      "pix_fmt":  "yuv420p10le",
+                                      "r_frame_rate":  "24000/1001",
+                                      "avg_frame_rate":  "24000/1001",
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  1,
+                                      "codec_name":  "aac",
+                                      "profile":  "LC",
+                                      "codec_type":  "audio",
+                                      "channels":  2,
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "jpn"
+                                               }
+                                  },
+                                  {
+                                      "index":  2,
+                                      "codec_name":  "aac",
+                                      "profile":  "LC",
+                                      "codec_type":  "audio",
+                                      "channels":  2,
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  1,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "eng"
+                                               }
+                                  },
+                                  {
+                                      "index":  3,
+                                      "codec_name":  "ass",
+                                      "codec_type":  "subtitle",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "eng"
+                                               }
+                                  },
+                                  {
+                                      "index":  4,
+                                      "codec_name":  "subrip",
+                                      "codec_type":  "subtitle",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "ara"
+                                               }
+                                  },
+                                  {
+                                      "index":  5,
+                                      "codec_name":  "subrip",
+                                      "codec_type":  "subtitle",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "por"
+                                               }
+                                  },
+                                  {
+                                      "index":  6,
+                                      "codec_name":  "subrip",
+                                      "codec_type":  "subtitle",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+                                                   "language":  "spa"
+                                               }
+                                  },
+                                  {
+                                      "index":  7,
+                                      "codec_name":  "ttf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  8,
+                                      "codec_name":  "ttf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  9,
+                                      "codec_name":  "otf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  10,
+                                      "codec_name":  "otf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  11,
+                                      "codec_name":  "otf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  12,
+                                      "codec_name":  "otf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  13,
+                                      "codec_name":  "ttf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  14,
+                                      "codec_name":  "ttf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  15,
+                                      "codec_name":  "ttf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  16,
+                                      "codec_name":  "ttf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  17,
+                                      "codec_name":  "ttf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  18,
+                                      "codec_name":  "ttf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  },
+                                  {
+                                      "index":  19,
+                                      "codec_name":  "ttf",
+                                      "codec_type":  "attachment",
+                                      "r_frame_rate":  "0/0",
+                                      "avg_frame_rate":  "0/0",
+                                      "disposition":  {
+                                                          "default":  0,
+                                                          "forced":  0,
+                                                          "attached_pic":  0
+                                                      },
+                                      "tags":  {
+
+                                               }
+                                  }
+                              ],
+                  "format":  {
+                                 "format_name":  "matroska,webm",
+                                 "duration":  "1500.007000",
+                                 "bit_rate":  "2552126"
+                             }
+              },
+    "expected":  {
+                     "verdict":  "FIXABLE",
+                     "reasons":  [
+
+                                 ],
+                     "actions":  [
+                                     "convert subtitle #3 ass [eng] -\u003e SRT"
+                                 ],
+                     "warnings":  [
+
+                                  ],
+                     "video":  {
+                                   "index":  0,
+                                   "codec":  "hevc",
+                                   "profile":  "Main 10",
+                                   "width":  1920,
+                                   "height":  1080,
+                                   "fps":  23.976,
+                                   "bitDepth":  10,
+                                   "hdr":  "SDR"
+                               },
+                     "bitrateMbps":  2.6,
+                     "durationSec":  1500.007,
+                     "fixArgs":  [
+                                     [
+                                         "-hide_banner",
+                                         "-nostdin",
+                                         "-nostats",
+                                         "-loglevel",
+                                         "error",
+                                         "-y",
+                                         "-i",
+                                         "INPUT",
+                                         "-map",
+                                         "0:0",
+                                         "-map",
+                                         "0:1",
+                                         "-map",
+                                         "0:2",
+                                         "-map",
+                                         "0:3",
+                                         "-map",
+                                         "0:4",
+                                         "-map",
+                                         "0:5",
+                                         "-map",
+                                         "0:6",
+                                         "-map_metadata",
+                                         "0",
+                                         "-map_chapters",
+                                         "0",
+                                         "-c",
+                                         "copy",
+                                         "-disposition:v:0",
+                                         "default",
+                                         "-disposition:a:0",
+                                         "0",
+                                         "-disposition:a:1",
+                                         "default",
+                                         "-c:s:0",
+                                         "srt",
+                                         "-f",
+                                         "matroska",
+                                         "OUTPUT"
+                                     ]
+                                 ]
+                 }
+}
