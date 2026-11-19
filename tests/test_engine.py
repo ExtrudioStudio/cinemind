@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import socket
 import time
 from pathlib import Path
 
@@ -18,30 +17,17 @@ from stremio_dl.models import Candidate, EpisodeRef, FileTarget, TorrentJob
 pytestmark = pytest.mark.torrent
 
 
-def _free_port() -> int:
-    """A port free for both TCP and UDP (libtorrent binds uTP on the same number)."""
-    for _ in range(50):
-        with socket.socket() as tcp, socket.socket(type=socket.SOCK_DGRAM) as udp:
-            tcp.bind(("127.0.0.1", 0))
-            port = tcp.getsockname()[1]
-            try:
-                udp.bind(("127.0.0.1", port))
-            except OSError:
-                continue
-            return port
-    raise RuntimeError("no free port")
-
-
-def _local(port: int | None = None) -> dict:
-    return {**LOCAL, "listen_interfaces": f"127.0.0.1:{port or _free_port()}"}
-
-
+# Port 0 lets the OS pick a free port when the session binds, so there is no window between
+# choosing a port and binding it. uTP is off because it would need a UDP socket on the same
+# number; the peers here dial each other over TCP on localhost.
 LOCAL = {
     "listen_interfaces": "127.0.0.1:0",
     "enable_dht": False,
     "enable_lsd": False,
     "enable_upnp": False,
     "enable_natpmp": False,
+    "enable_outgoing_utp": False,
+    "enable_incoming_utp": False,
 }
 FILES = {
     "Show.S01E01.1080p.WEB.mkv": 300_000,
@@ -62,7 +48,7 @@ def seeder(tmp_path):
     lt.set_piece_hashes(ct, str(content.parent))
     info = lt.torrent_info(lt.bencode(ct.generate()))
 
-    ses = lt.session({**_local(), "alert_mask": 0})
+    ses = lt.session({**LOCAL, "alert_mask": 0})
     atp = lt.add_torrent_params()
     atp.ti = info
     atp.save_path = str(content.parent)
@@ -125,7 +111,7 @@ def _job(seed, library: Path, episode: int, file_idx: int | None, filename: str 
 def _engine(tmp_path: Path, listener, **cfg) -> TorrentEngine:
     config = Config(**{"metadata_timeout": 20, "stall_timeout": 30, **cfg})
     return TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
-                         settings=_local())  # fmt: skip
+                         settings=LOCAL)  # fmt: skip
 
 
 async def test_downloads_only_the_selected_file_to_its_library_path(tmp_path, seeder):

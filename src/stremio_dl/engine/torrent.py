@@ -149,7 +149,8 @@ class TorrentEngine:
     @property
     def session(self) -> Any:
         if self._ses is None:
-            self._ses = lt.session(self._settings())
+            # The bindings accept a plain settings dict; the stubs only list settings_pack.
+            self._ses = lt.session(self._settings())  # type: ignore[call-overload]
         return self._ses
 
     def magnet(self, job: TorrentJob) -> str:

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import sys
+from collections.abc import Coroutine
 from logging.handlers import RotatingFileHandler
-from typing import Annotated
+from typing import Annotated, Any
 
 import tomli_w
 import typer
@@ -16,6 +18,7 @@ from .addons.client import AddonError
 from .catalog import search
 from .config import Config, config_path, data_dir, load_config, log_dir, save_config, set_value
 from .home import run_home
+from .models import MediaType
 from .postprocess import hand_off_job, log_folder, new_batch
 from .quality import parse_quality
 from .selection import SelectionError, parse_selection, split_spec
@@ -64,7 +67,7 @@ def _setup_logging(verbose: bool) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
-def _run(coro) -> None:
+def _run(coro: Coroutine[Any, Any, None]) -> None:
     try:
         asyncio.run(coro)
     except KeyboardInterrupt:
@@ -76,6 +79,25 @@ def _run(coro) -> None:
     except (AddonError, SelectionError, ValueError) as exc:
         console.print(f"[red]{exc}[/]")
         raise typer.Exit(1) from None
+
+
+_MEDIA_TYPES: dict[str, MediaType] = {
+    "series": "series",
+    "tv": "series",
+    "show": "series",
+    "movie": "movie",
+    "film": "movie",
+}
+
+
+def _media_type(value: str | None) -> MediaType | None:
+    """The ``--type`` option: ``series`` or ``movie`` (``tv``/``show``/``film`` also work)."""
+    if value is None:
+        return None
+    try:
+        return _MEDIA_TYPES[value.strip().lower()]
+    except KeyError:
+        raise typer.BadParameter("use 'series' or 'movie'", param_hint="--type") from None
 
 
 def _cfg() -> Config:
@@ -106,10 +128,11 @@ def search_cmd(
     type_: Annotated[str | None, typer.Option("--type", "-t", help="series or movie")] = None,
 ) -> None:
     """Search the metadata addons."""
+    media = _media_type(type_)
 
     async def go() -> None:
         async with open_session(_cfg()) as sess:
-            types = (type_,) if type_ else ("series", "movie")
+            types: tuple[MediaType, ...] = (media,) if media else ("series", "movie")
             results = await search(sess.client, sess.meta_addons, query, types)
             if results:
                 console.print(search_table(results))
@@ -126,10 +149,11 @@ def info_cmd(
     sample: Annotated[bool, typer.Option(help="Sample available resolutions.")] = True,
 ) -> None:
     """Show seasons, episode counts and available resolutions."""
+    media = _media_type(type_)
 
     async def go() -> None:
         async with open_session(_cfg()) as sess:
-            title = await pick_title(sess, query, type_, first=True, prompt=False)
+            title = await pick_title(sess, query, media, first=True, prompt=False)
             if title:
                 await show_overview(sess, title, sample=sample)
 
@@ -155,12 +179,13 @@ def get_cmd(
     """Find, plan and download in one go."""
     cfg = _cfg()
     prompt = interactive() and not yes
-    if type_ is None and selection and split_spec(selection)[0]:
-        type_ = "series"  # "s1e5"-style input only makes sense for a show
+    media = _media_type(type_)
+    if media is None and selection and split_spec(selection)[0]:
+        media = "series"  # "s1e5"-style input only makes sense for a show
 
     async def go() -> None:
         async with open_session(cfg) as sess:
-            title = await pick_title(sess, query, type_, first=first, prompt=prompt)
+            title = await pick_title(sess, query, media, first=first, prompt=prompt)
             if title is None:
                 raise typer.Exit(1)
             text = selection
@@ -296,8 +321,9 @@ def config_reset() -> None:
 
 def main() -> None:
     for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")  # emoji, Cyrillic titles
-        except (AttributeError, ValueError):
-            pass
+        if isinstance(stream, io.TextIOWrapper):  # not when replaced by a test harness or IDE
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")  # emoji, Cyrillic titles
+            except ValueError:
+                pass
     app()

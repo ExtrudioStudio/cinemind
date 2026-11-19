@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from .addons.client import Addon, AddonClient, AddonError
+from .aio import reraise_cancelled
 from .models import MediaType, SearchResult
 
 log = logging.getLogger(__name__)
@@ -46,7 +47,8 @@ async def search(
 
     seen: set[str] = set()
     found: list[SearchResult] = []
-    for (addon, type_, _), metas in zip(calls, results, strict=True):
+    for (addon, type_, _), raw in zip(calls, results, strict=True):
+        metas = reraise_cancelled(raw)
         if isinstance(metas, Exception):
             log.warning("Search failed on %s (%s): %s", addon.name, type_, metas)
             continue

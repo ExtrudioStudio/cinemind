@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import sys
 from collections import Counter
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import questionary
 from rich.status import Status
@@ -58,7 +60,7 @@ class Session:
 
 
 @asynccontextmanager
-async def open_session(cfg: Config):
+async def open_session(cfg: Config) -> AsyncIterator[Session]:
     async with AddonClient(cfg, JsonCache(cache_dir() / "http")) as client:
         with Status("Loading addons…", console=console):
             meta_addons = await client.load_all(cfg.meta_addons)
@@ -70,7 +72,7 @@ def interactive() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
-async def _ask(question: questionary.Question):
+async def _ask(question: questionary.Question) -> Any:
     answer = await question.ask_async()
     if answer is None:
         raise Cancelled
@@ -242,9 +244,9 @@ async def confirm_plan(sess: Session, plan: Plan, prompt: bool, assume_yes: bool
     if not prompt:
         console.print("[yellow]Pass --yes to start without confirmation.[/]")
         return False
-    return await _ask(questionary.confirm(
+    return bool(await _ask(questionary.confirm(
         f"Download {plan.file_count} files ({human_size(plan.total_size)})?", default=True
-    ))  # fmt: skip
+    )))  # fmt: skip
 
 
 # -- step 5/6: download ----------------------------------------------------------------------

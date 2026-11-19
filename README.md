@@ -2,6 +2,11 @@
 
 # stremio-dl
 
+[![CI](https://github.com/ExtrudioStudio/stremio-dl/actions/workflows/ci.yml/badge.svg)](https://github.com/ExtrudioStudio/stremio-dl/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/ExtrudioStudio/stremio-dl/actions/workflows/codeql.yml/badge.svg)](https://github.com/ExtrudioStudio/stremio-dl/actions/workflows/codeql.yml)
+![Python 3.12 | 3.13](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 A terminal app that finds movies and TV shows through Stremio addons (Cinemeta for
 metadata, Torrentio for streams), picks the best-seeded torrent at the resolution you ask
 for, downloads only the files you selected, and writes them straight into your library:
@@ -160,10 +165,15 @@ extra_movie_roots = ['\\nas\Media\Movies']
 ## Development
 
 ```powershell
-uv run pytest                      # 98 tests, offline (recorded responses + a local seeder)
-uv run ruff check src tests
+uv run pytest --cov                # offline: recorded responses and a local seeder
+uv run ruff check src tests tools
+uv run mypy
+uv run pre-commit install          # run the checks on every commit
 uv run python tools/make_icon.py   # redraw the icon (standard library only)
 ```
+
+CI runs the same checks on Windows and Alpine Linux for Python 3.12 and 3.13. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the details.
 
 Layout: `addons/` (protocol client and cache), `catalog.py`, `metadata.py`, `selection.py`,
 `quality.py`, `streams.py`, `planner.py`, `library.py`, `engine/torrent.py` (libtorrent),
