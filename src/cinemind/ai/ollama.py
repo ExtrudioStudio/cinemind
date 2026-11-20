@@ -22,14 +22,21 @@ from pydantic import BaseModel, ValidationError
 from cinemind.ai.llm import CallRecord, LLMError, LLMUnavailable
 from cinemind.core.store import Store
 
+# The context window to ask for. Ollama's default (often 4096 tokens) is smaller than a judge
+# prompt for a big pack (150 files is about 12K tokens), and Ollama silently drops the start of
+# a prompt that doesn't fit: the instructions.
+NUM_CTX = 16384
+
 
 class OllamaLLM:
     def __init__(self, url: str, model: str, store: Store | None = None, timeout: float = 120.0,
-                 transport: httpx.AsyncBaseTransport | None = None):  # fmt: skip
+                 transport: httpx.AsyncBaseTransport | None = None,
+                 num_ctx: int = NUM_CTX):  # fmt: skip
         self.url = url.rstrip("/")
         self.model = model
         self.store = store
         self.timeout = timeout
+        self.num_ctx = num_ctx
         self._transport = transport  # tests
 
     @property
@@ -45,7 +52,7 @@ class OllamaLLM:
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "stream": False,
             "format": output.model_json_schema(),
-            "options": {"temperature": 0, "num_predict": max_tokens},
+            "options": {"temperature": 0, "num_predict": max_tokens, "num_ctx": self.num_ctx},
         }
         started = time.monotonic()
         try:
@@ -79,6 +86,10 @@ class OllamaLLM:
                 latency_s=round(time.monotonic() - started, 3)))  # fmt: skip
         if stop == "length":
             raise LLMError("The local model's answer was cut off.")
+        if int(data.get("prompt_eval_count") or 0) >= self.num_ctx - max_tokens:
+            # Ollama doesn't say it truncated; a prompt that filled the window probably was
+            raise LLMError(f"The request may not have fit the local model's {self.num_ctx}-token "
+                           "context window.")  # fmt: skip
         try:
             return output.model_validate_json(text)
         except ValidationError as exc:

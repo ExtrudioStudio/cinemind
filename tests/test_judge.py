@@ -319,3 +319,17 @@ async def test_the_runner_matches_each_target_and_never_reuses_a_file(tmp_path, 
         "\n</document>"))  # fmt: skip
     assert [f["id"] for f in second["files"]] == ["1"]  # file 0 went to S01E07
     assert second["torrent"] == "Friends S01" and second["wanted"][0]["episode"] == 8
+
+
+async def test_ollama_gets_a_context_window_big_enough_and_notices_a_full_one():
+    sent = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.update(json.loads(request.content))
+        reply = {"content": json.dumps(_answer("0"))}
+        return httpx.Response(200, json={"done_reason": "stop", "prompt_eval_count": 16000,
+                                         "message": reply})  # fmt: skip
+
+    with pytest.raises(LLMError, match="context window"):
+        await _ollama(handler).parse("p", "S", "U", choice_model(["0"]), max_tokens=1024)
+    assert sent["options"]["num_ctx"] == 16384  # Ollama's own default would cut big packs
