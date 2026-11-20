@@ -28,7 +28,9 @@ working for this release.
 - **An eval for it** (`evals/pack_matching/`, [docs/evals.md](docs/evals.md)): 61 reviewed
   cases run through the production matching code, with wrong picks scored separately, a
   self-check of the grading, resumable runs, recorded replies, and a harness a person must
-  approve before a model runs. ADR 0006.
+  approve before a model runs. ADR 0006. On the local model (`qwen2.5:7b`), 93% of cases are
+  right, against 33% for the name rules alone, but wrong picks rise from 3.3% to 6.6%. The run
+  is recorded and replayed in the tests.
 - The name rules skip decoys (samples, trailers, previews, extras, deleted scenes, creditless
   openings) that carry an episode's code. A lone sample is no longer downloaded as the episode.
 - **After-download stages** (`auto_subtitles`, `auto_ingest`): each finished file gets a

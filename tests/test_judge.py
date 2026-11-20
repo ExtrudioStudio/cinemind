@@ -291,6 +291,26 @@ def test_the_recorded_name_rule_runs_reproduce(tmp_path, variant, rules):
     assert fresh == grades(EVAL / "runs" / variant / "results.jsonl") and len(fresh) == 61
 
 
+def test_the_recorded_model_run_replays_to_the_committed_grades(tmp_path):
+    """v2 (qwen2.5:7b) from its cassette, for free: same prompts, same answers, same grades.
+
+    A change to the judge's prompt or the cases fails this (the recorded prompts no longer
+    match), which is the point: rerun the model and commit the new variant with it.
+    """
+    (tmp_path / "_state.json").write_text((EVAL / "runs" / "_state.json").read_text("utf-8"),
+                                          encoding="utf-8")  # fmt: skip
+    assert _eval_module().main(["--variant", "v2", "--reps", "2", "--flow", str(tmp_path),
+                                "--replay", str(EVAL / "cassettes" / "v2.jsonl")]) == 0  # fmt: skip
+
+    def grades(path: Path) -> dict[tuple[str, int], dict]:
+        rows = [json.loads(x) for x in path.read_text("utf-8").splitlines() if x]
+        return {(r["prompt_id"], r["rep"]): r["grade"] for r in rows}
+
+    fresh = grades(tmp_path / "v2" / "results.jsonl")
+    assert fresh == grades(EVAL / "runs" / "v2" / "results.jsonl") and len(fresh) == 122
+    assert not (tmp_path / "v2" / "errors.jsonl").exists()
+
+
 def test_the_cases_are_what_the_generator_writes(tmp_path):
     module = _load("pack_matching_cases", EVAL / "make_cases.py")
     written = [json.loads(x) for x in (EVAL / "cases.jsonl").read_text("utf-8").splitlines()]

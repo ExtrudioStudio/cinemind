@@ -165,9 +165,17 @@ ollama pull qwen2.5:7b
 cinemind config set judge_provider anthropic    # or Claude (llm_model), or "off"
 ```
 
-How well it works is measured, not assumed: [the eval](docs/evals.md) runs 61 reviewed cases
-through the same code the engine uses, scores wrong picks separately from misses, and compares
-the name rules, a local model and Claude.
+How well it works is measured, not assumed. [The eval](docs/evals.md) runs 61 reviewed cases
+through the same code the engine uses, and scores wrong picks separately from misses:
+
+| | correct | wrong picks | present episodes found |
+|---|---|---|---|
+| name rules only | 33% | 3.3% | 20% |
+| + judge on `qwen2.5:7b` (local) | 93% | 6.6% | 96% |
+
+The wrong picks are near misses, all answered with high confidence. One is a special taken for
+S01E01; another is a shorter title taken for the full one. Checks for those, and Claude as the
+comparison, are next.
 
 ### Use from an AI assistant (MCP)
 
