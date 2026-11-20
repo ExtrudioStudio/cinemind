@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import random
+import socket
 import sqlite3
 import time
 from pathlib import Path
@@ -22,8 +24,8 @@ pytestmark = pytest.mark.torrent
 
 
 # Port 0 lets the OS pick a free port when the session binds, so there is no window between
-# choosing a port and binding it. uTP is off because it would need a UDP socket on the same
-# number; the peers here dial each other over TCP on localhost.
+# choosing a port and binding it; _listen() handles the one way that bind still fails. uTP is
+# off: the peers here dial each other over TCP on localhost.
 LOCAL = {
     "listen_interfaces": "127.0.0.1:0",
     "enable_dht": False,
@@ -39,6 +41,46 @@ FILES = {
     "Sample/sample.mkv": 20_000,
     "readme.txt": 100,
 }
+# What a session must post for _listen() to see how its listen went.
+LISTEN_ALERTS = lt.alert_category.error | lt.alert_category.status
+LISTEN_ATTEMPTS = 20
+
+
+def _listen_failure(ses, timeout: float = 5) -> str | None:
+    """None once ``ses`` listens on TCP and UDP; otherwise why it doesn't."""
+    up = set()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        ses.wait_for_alert(100)
+        for alert in ses.pop_alerts():
+            if isinstance(alert, lt.listen_failed_alert):
+                return alert.message()
+            if isinstance(alert, lt.listen_succeeded_alert):
+                up.add(alert.socket_type)
+        if {lt.socket_type_t.tcp, lt.socket_type_t.udp} <= up:
+            return None
+    return f"no listen alert within {timeout}s"
+
+
+def _listen(ses) -> int:
+    """Wait until ``ses`` listens, moving it to another port if it can't; return the port.
+
+    libtorrent opens a UDP socket on the TCP port's number, uTP or not, and when that bind
+    fails it closes the TCP socket too, so no peer can connect. On Windows the UDP bind fails
+    for numbers in a reserved range (``netsh int ipv4 show excludedportrange protocol=udp``;
+    Hyper-V and WSL reserve blocks of 100) even though the OS chose the TCP port as free.
+    Windows hands out port-0 binds in order, so asking for port 0 again lands in the same
+    block: the retry asks for a random number below its dynamic range (49152 and up) instead.
+    A taken port is a failure seen and retried here, not a race.
+    """
+    failures = []
+    for _ in range(LISTEN_ATTEMPTS):
+        failure = _listen_failure(ses)
+        if failure is None:
+            return ses.listen_port()
+        failures.append(failure)
+        ses.apply_settings({"listen_interfaces": f"127.0.0.1:{random.randrange(20_000, 49_152)}"})
+    raise RuntimeError(f"no listen port after {LISTEN_ATTEMPTS} tries: {failures}")
 
 
 @pytest.fixture
@@ -52,22 +94,21 @@ def seeder(tmp_path):
     lt.set_piece_hashes(ct, str(content.parent))
     info = lt.torrent_info(lt.bencode(ct.generate()))
 
-    ses = lt.session({**LOCAL, "alert_mask": 0})
+    ses = lt.session({**LOCAL, "alert_mask": LISTEN_ALERTS})
+    port = _listen(ses)
+    ses.apply_settings({"alert_mask": 0})  # nothing reads the seeder's alerts after this
     atp = lt.add_torrent_params()
     atp.ti = info
     atp.save_path = str(content.parent)
     atp.flags |= lt.torrent_flags.seed_mode
     ses.add_torrent(atp)
-    deadline = time.time() + 10
-    while ses.listen_port() == 0 and time.time() < deadline:
-        time.sleep(0.05)
     layout = info.layout()
     index = {layout.file_path(i).replace("\\", "/").split("/", 1)[1]: i
              for i in range(info.num_files())}  # fmt: skip
     yield {
         "session": ses,
         "info_hash": str(info.info_hashes().v1),
-        "port": ses.listen_port(),
+        "port": port,
         "index": index,
         "content": content,
     }
@@ -116,10 +157,15 @@ def _job(seed, library: Path, episode: int, file_idx: int | None, filename: str 
     return TorrentJob(seed["info_hash"], cand.release, (), [target], [("127.0.0.1", seed["port"])])
 
 
+def _listening(engine: TorrentEngine) -> TorrentEngine:
+    _listen(engine.session)  # before any job, so the alerts it reads are only the listen ones
+    return engine
+
+
 def _engine(tmp_path: Path, listener, **cfg) -> TorrentEngine:
     config = Config(**{"metadata_timeout": 20, "stall_timeout": 30, **cfg})
-    return TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
-                         settings=LOCAL)  # fmt: skip
+    return _listening(TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
+                                    settings=LOCAL))  # fmt: skip
 
 
 async def test_downloads_only_the_selected_file_to_its_library_path(tmp_path, seeder):
@@ -214,8 +260,8 @@ class Exploding(Recorder):
 
 def _engine_with(tmp_path, listener, **kwargs) -> TorrentEngine:
     config = Config(metadata_timeout=20, stall_timeout=30)
-    return TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
-                         settings=LOCAL, **kwargs)  # fmt: skip
+    return _listening(TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
+                                    settings=LOCAL, **kwargs))  # fmt: skip
 
 
 @pytest.mark.torrent
@@ -256,8 +302,8 @@ async def test_a_file_that_cannot_be_renamed_is_reported_failed(tmp_path, seeder
 
 def _matched_engine(tmp_path: Path, listener, matcher) -> TorrentEngine:
     config = Config(metadata_timeout=20, stall_timeout=30)
-    return TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
-                         settings=LOCAL, matcher=matcher)  # fmt: skip
+    return _listening(TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
+                                    settings=LOCAL, matcher=matcher))  # fmt: skip
 
 
 async def test_a_file_the_names_dont_place_is_downloaded_from_the_matchers_pick(tmp_path, seeder):
@@ -301,3 +347,21 @@ async def test_when_the_matcher_finds_nothing_that_episode_is_replanned(tmp_path
     assert (library / "Show" / "Season 01" / "Show - S01E01 - Pilot.mkv").exists()
     assert rec.done == ["S01E01"] and rec.dead == [(seeder["info_hash"], "file not in torrent")]
     assert not (library / "Show" / "Season 01" / "Show - S01E07 - Pilot.mkv").exists()
+
+
+# -- the sessions themselves -----------------------------------------------------------------
+
+
+def test_a_session_that_cannot_bind_udp_on_its_port_moves_to_another():
+    # A UDP socket on the number stands in for a reserved range: libtorrent's TCP bind works,
+    # its UDP bind on the same number fails, and it drops both (see _listen). A port in use is
+    # one libtorrent would move off by itself (to the next number, or one the OS picks); a
+    # reserved one is "access denied", which it doesn't, so those fallbacks are off here.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as held:
+        held.bind(("127.0.0.1", 0))
+        taken = held.getsockname()[1]
+        ses = lt.session({**LOCAL, "listen_interfaces": f"127.0.0.1:{taken}",
+                          "max_retry_port_bind": 0, "listen_system_port_fallback": False,
+                          "alert_mask": LISTEN_ALERTS})  # fmt: skip
+        port = _listen(ses)
+        assert port not in (0, taken) and ses.is_listening()
