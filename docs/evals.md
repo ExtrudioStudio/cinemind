@@ -104,7 +104,7 @@ two. Paired differences against the baseline are tighter, because the same cases
 ```powershell
 uv run python evals/pack_matching/run.py --self-check
 uv run python evals/pack_matching/run.py --variant v1                       # name rules, free
-uv run python evals/pack_matching/run.py --approve-harness --judge ollama --model qwen2.5:7b
+uv run python evals/pack_matching/run.py --approve-harness    # a person, after reviewing
 uv run python evals/pack_matching/run.py --variant v2 --judge ollama --model qwen2.5:7b --reps 2 --record
 uv run python evals/pack_matching/run.py --variant v3 --judge anthropic --model claude-opus-5-5 --reps 2 --record
 uv run python evals/pack_matching/run.py --summary

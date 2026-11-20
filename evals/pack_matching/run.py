@@ -613,6 +613,9 @@ def main(argv: list[str] | None = None) -> int:
     if a.summary:
         print(summarize(a.flow))
         return 0
+    if a.approve_harness:  # a person's step: record the reviewed harness, run nothing
+        check_harness(a.flow, approve=True)
+        return 0
     if not (a.variant == "baseline" or (a.variant[:1] == "v" and a.variant[1:].isdigit())):
         p.error(f"--variant must be {VARIANT_NAME} (the report ignores other names)")
     if a.replay:
@@ -621,7 +624,7 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--model is required with --judge ollama/anthropic")
     a.concurrency = a.concurrency or (1 if a.judge == "ollama" else 4)
     if a.judge in ("ollama", "anthropic"):  # model calls: the harness must be approved
-        check_harness(a.flow, a.approve_harness)
+        check_harness(a.flow, approve=False)
     if a.cases:
         cases = [c for c in cases if c["id"] in set(a.cases)]
     asyncio.run(run(a, a.flow, cases))
