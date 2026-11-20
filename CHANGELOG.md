@@ -77,6 +77,23 @@ working for this release.
   (`CINEMIND_PATH`, `CINEMIND_ID`, `CINEMIND_TYPE`, `CINEMIND_NAME`, `CINEMIND_YEAR`,
   `CINEMIND_SEASON`, `CINEMIND_EPISODE`, `CINEMIND_ROOT`, `CINEMIND_BATCH`,
   `CINEMIND_BATCH_SIZE`).
+- **`cinemind doctor`**: checks what the settings need and says how to fix what's missing.
+  It covers the libraries, libtorrent, the VPN, the sources and metadata addon, FFmpeg, the
+  ingest share and TV profile, Plex and its token, subtitle accounts, the keyring, Claude,
+  Ollama and its model, and the MCP extra. `--offline`, `--json`, and exit code 1 on a failure.
+- **A VPN kill switch** (`vpn_kill_switch`, on when `outgoing_interfaces` is set): BitTorrent
+  doesn't start while the VPN adapter is down, and pauses (DHT and port mapping too) if it
+  drops. It resumes when the adapter is back, and the outage doesn't count as a stall.
+  ADR 0007.
+- **`cinemind logs`**: a job's or a file's story from the log (`--job`, `--item`, `--level`,
+  `--last`, `--json`). Each delivery step is logged.
+- **A Docker image** (`ghcr.io/extrudiostudio/cinemind`, Alpine, non-root): BitTorrent,
+  FFmpeg, the AI extras and the MCP server, with secrets from the environment. Also
+  `compose.yaml` with an optional Ollama service. CI builds it and runs `cinemind doctor`
+  in it.
+- **Releases from a tag**: pushing `vX.Y.Z` checks that it matches the version, builds the
+  wheel and sdist, makes the GitHub Release from this file's section, and publishes the
+  image. PyPI is opt-in (trusted publishing).
 
 ### Fixed
 - Pausing or stopping while FFmpeg or ffprobe runs stops that process too, instead of leaving
@@ -112,6 +129,11 @@ working for this release.
   Existing configs keep the value they already have.
 - Values in the post-download command keep their double quotes (they used to be changed to
   single quotes).
+- The log is JSON lines, `cinemind.jsonl`, instead of the text `cinemind.log`. Each line has
+  `ts`, `level`, `logger` and `msg`, plus `job_id`, `item`, `stage`, `info_hash` and `plan_id`
+  where they apply. Read it with `cinemind logs`.
+- Requires psutil 6 or later (the VPN check). The package metadata now has its license,
+  links and classifiers.
 
 ## [0.1.0] - 2026-11-19
 

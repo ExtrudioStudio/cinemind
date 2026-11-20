@@ -1,0 +1,44 @@
+# cinemind with Docker Compose. It's a command-line tool, so each command is a `run`:
+#
+#   mkdir library        # the container runs as uid 1000; on Linux: sudo chown 1000 library
+#   docker compose run --rm cinemind doctor
+#   docker compose run --rm cinemind get "Night of the Living Dead 1968" --yes
+#   docker compose run --rm cinemind status
+#
+# Settings persist in the "cinemind" volume: `docker compose run --rm cinemind config set ...`.
+# For the pack-file judge on a local model, start Ollama too and point cinemind at it:
+#
+#   docker compose --profile judge up -d ollama
+#   docker compose exec ollama ollama pull qwen2.5:7b
+#   docker compose run --rm cinemind config set ollama_url http://ollama:11434
+
+services:
+  cinemind:
+    image: ghcr.io/extrudiostudio/cinemind:latest
+    build: .
+    stdin_open: true
+    tty: true
+    volumes:
+      - cinemind:/cinemind
+      - ./library:/library
+      # Ingest to a share: mount it and `config set ingest_root /nas`.
+      # - /mnt/nas/Media:/nas
+    environment:
+      # Secrets come from the environment in a container (there's no keyring).
+      CINEMIND_PLEX: ${CINEMIND_PLEX:-}
+      CINEMIND_OPENSUBTITLES_API_KEY: ${CINEMIND_OPENSUBTITLES_API_KEY:-}
+      CINEMIND_OPENSUBTITLES_PASSWORD: ${CINEMIND_OPENSUBTITLES_PASSWORD:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "6881:6881/tcp"
+      - "6881:6881/udp"
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [judge]
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  cinemind:
+  ollama:

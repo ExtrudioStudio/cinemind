@@ -12,3 +12,4 @@ arbitrary choice.
 | [0004](0004-port-the-powershell-pipeline.md) | Port the PowerShell pipeline to Python, proven by recorded verdicts | Accepted |
 | [0005](0005-recorded-delivery-stages.md) | Every file's delivery is a recorded state machine, reviewed by a person when needed | Accepted |
 | [0006](0006-local-judge-measured-by-an-eval.md) | The pack-file judge runs on a local model, and an eval decides what it's worth | Accepted |
+| [0007](0007-vpn-kill-switch-waits.md) | With a VPN adapter set, BitTorrent waits while it's down instead of failing or leaking | Accepted |

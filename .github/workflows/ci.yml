@@ -74,6 +74,27 @@ jobs:
       - run: uv run pytest -m "not network"
       - run: uv run cinemind --version
 
+  # The image builds, and cinemind in it finds everything it needs (doctor fails otherwise).
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: cinemind:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - run: docker run --rm cinemind:ci --version
+      - run: docker run --rm cinemind:ci doctor --offline
+      - name: The library defaults to /library, and the app runs as a non-root user
+        run: |
+          docker run --rm --entrypoint sh cinemind:ci -c \
+            'test "$(id -u)" = 1000 && cinemind config show | grep -q "/library/TV Shows"'
+
   test-windows:
     name: Test (Windows, Python ${{ matrix.python }})
     runs-on: windows-latest
