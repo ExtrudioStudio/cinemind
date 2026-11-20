@@ -26,6 +26,7 @@ import libtorrent as lt
 from cinemind import __version__
 from cinemind.core.config import Config
 from cinemind.core.models import FileTarget, TorrentJob
+from cinemind.core.network import Guard, vpn_guard
 from cinemind.engines.base import (
     NOT_IN_TORRENT,
     EngineListener,
@@ -56,7 +57,11 @@ PRIORITY_WANTED = 4
 RESUME_INTERVAL = 60.0
 RENAME_RETRY_DELAY = 2.0
 RENAME_ATTEMPTS = 8
-__all__ = ["NOT_IN_TORRENT", "TorrentEngine"]
+GUARD_INTERVAL = 5.0  # seconds between checks that the VPN is up
+VPN_DOWN = "vpn down"  # the state of every unfinished file while the kill switch holds
+# What talks to the network on its own, besides the torrents: off while the VPN is down.
+_BACKGROUND = ("enable_dht", "enable_lsd", "enable_upnp", "enable_natpmp")
+__all__ = ["NOT_IN_TORRENT", "VPN_DOWN", "TorrentEngine"]
 
 
 def _ih(handle: Any) -> str:
@@ -130,8 +135,16 @@ class TorrentEngine(ListenerMixin):
         rename_retry_delay: float = RENAME_RETRY_DELAY,
         submit: Submit | None = None,
         matcher: Matcher | None = None,
+        guard: Guard | None = None,
     ):
         self.cfg = cfg
+        # The kill switch: says why BitTorrent must not run (the VPN is down), or "". Default:
+        # outgoing_interfaces must be up (cinemind.core.network). No session is created, and a
+        # running one is paused with its DHT and port mapping off, until it says "" again.
+        self.guard = guard if guard is not None else vpn_guard(cfg)
+        self.blocked = ""
+        self._blocked_since = 0.0
+        self._last_guard = float("-inf")
         self.staging_root = staging_root
         self.listener = listener
         self.poll_interval = poll_interval
@@ -217,7 +230,7 @@ class TorrentEngine(ListenerMixin):
         self.active[job.info_hash] = _Active(job, handle, now, now)
         for host, port in job.peers:
             handle.connect_peer((host, port))
-        log.info("Added %s (%s)", job.info_hash, job.release)
+        log.info("Added %s (%s)", job.info_hash, job.release, extra={"info_hash": job.info_hash})
 
     def _start_pending(self) -> None:
         while self.pending and len(self.active) < max(1, self.cfg.max_active_torrents):
@@ -225,7 +238,7 @@ class TorrentEngine(ListenerMixin):
             try:
                 self._start(job, resume)
             except Exception as exc:  # bad resume data, invalid magnet, disk errors
-                log.exception("Could not add %s", job.info_hash)
+                log.exception("Could not add %s", job.info_hash, extra={"info_hash": job.info_hash})
                 self._report_dead(job, f"could not add torrent: {exc}", list(job.targets))
 
     # -- metadata --------------------------------------------------------------------------
@@ -258,7 +271,13 @@ class TorrentEngine(ListenerMixin):
                sizes: list[int]) -> None:  # fmt: skip
         if idx is None:
             a.unmapped.append(target)
-            log.warning("%s: no file for %s in %s", a.job.info_hash, target.label, a.job.release)
+            log.warning(
+                "%s: no file for %s in %s",
+                a.job.info_hash,
+                target.label,
+                a.job.release,
+                extra={"info_hash": a.job.info_hash, "item": target.label},
+            )
             return
         ext = PurePosixPath(paths[idx].replace("\\", "/")).suffix.lower()
         target.final_path = target.final_path.with_suffix(ext)
@@ -298,7 +317,9 @@ class TorrentEngine(ListenerMixin):
         try:
             chosen = task.result()
         except Exception:  # a matcher bug must not stop the torrent
-            log.exception("Matching files in %s failed", a.job.info_hash)
+            log.exception(
+                "Matching files in %s failed", a.job.info_hash, extra={"info_hash": a.job.info_hash}
+            )
             chosen = [None] * len(targets)
         paths, sizes, usable = self._files(a)
         for target, idx in zip(targets, chosen, strict=False):
@@ -396,16 +417,31 @@ class TorrentEngine(ListenerMixin):
         target = a.mapping[idx]
         if ok:
             a.done.add(idx)
-            log.info("Finished %s -> %s", target.label, target.final_path)
+            log.info(
+                "Finished %s -> %s",
+                target.label,
+                target.final_path,
+                extra={"info_hash": info_hash, "item": target.label},
+            )
             self._notify("on_target_done", a.job, target)
         elif tries < self.rename_attempts:
-            log.warning("Rename of %s failed (%s); retrying", target.final_path, error)
+            log.warning(
+                "Rename of %s failed (%s); retrying",
+                target.final_path,
+                error,
+                extra={"info_hash": info_hash, "item": target.label},
+            )
             a.renaming[idx] = (tries, time.monotonic() + self.rename_retry_delay)
         else:
             # Leave the complete .part file in place rather than loop forever, and say so: the
             # item must end up "failed", not look finished.
             a.error = f"could not rename {target.final_path.name}.part: {error}"
-            log.error("%s: %s", target.label, a.error)
+            log.error(
+                "%s: %s",
+                target.label,
+                a.error,
+                extra={"info_hash": info_hash, "item": target.label},
+            )
             a.done.add(idx)
             a.failed.add(idx)
             self._notify("on_target_failed", a.job, target, a.error)
@@ -426,7 +462,9 @@ class TorrentEngine(ListenerMixin):
                     data = lt.write_resume_data_buf(alert.params)
                     self._notify("on_resume_data", _ih(alert.handle), data)
             elif isinstance(alert, lt.torrent_error_alert):
-                log.error("Torrent error: %s", alert.message())
+                log.error(
+                    "Torrent error: %s", alert.message(), extra={"info_hash": _ih(alert.handle)}
+                )
                 a = self.active.get(_ih(alert.handle))
                 if a:
                     a.error = alert.message()
@@ -456,7 +494,13 @@ class TorrentEngine(ListenerMixin):
         self._notify("on_job_done", a.job)
 
     def _kill(self, a: _Active, reason: str) -> None:
-        log.warning("Giving up on %s (%s): %s", a.job.info_hash, a.job.release, reason)
+        log.warning(
+            "Giving up on %s (%s): %s",
+            a.job.info_hash,
+            a.job.release,
+            reason,
+            extra={"info_hash": a.job.info_hash},
+        )
         if a.matching is not None:
             a.matching.cancel()
             a.matching = None
@@ -497,7 +541,37 @@ class TorrentEngine(ListenerMixin):
     def idle(self) -> bool:
         return not self.pending and not self.active
 
+    def _check_guard(self, now: float) -> None:
+        if self.guard is None or now - self._last_guard < GUARD_INTERVAL:
+            return
+        self._last_guard = now
+        try:
+            reason = self.guard()
+        except Exception as exc:  # can't tell: assume the worst
+            reason = f"the VPN check failed ({exc})"
+        if reason and not self.blocked:
+            self.blocked, self._blocked_since = reason, now
+            log.warning("BitTorrent paused: %s", reason)
+            if self._ses is not None:
+                self._ses.pause()
+                self._ses.apply_settings(dict.fromkeys(_BACKGROUND, False))
+        elif not reason and self.blocked:
+            log.info("BitTorrent resumed: the VPN is up")
+            self.blocked = ""
+            paused_for = now - self._blocked_since  # not a dead swarm or a stall
+            for a in self.active.values():
+                a.added_at += paused_for
+                a.last_progress_at += paused_for
+            if self._ses is not None:
+                settings = self._settings()
+                self._ses.apply_settings({k: settings[k] for k in _BACKGROUND})
+                self._ses.resume()
+
     def step(self) -> None:
+        self._check_guard(time.monotonic())
+        if self.blocked:
+            self._process_alerts()  # resume data and the like still arrive
+            return
         self._process_alerts()
         self._start_pending()
         now = time.monotonic()
@@ -597,4 +671,10 @@ class TorrentEngine(ListenerMixin):
             targets = [TargetView(t.label, t.final_path.name, t.size, 0, "queued")
                        for t in job.targets]  # fmt: skip
             views.append(JobView(job.info_hash, job.release, "queued", targets=targets))
+        if self.blocked:
+            for view in views[len(self.finished) :]:
+                view.error = self.blocked
+                for t in view.targets:
+                    if t.state not in ("done", "failed"):
+                        t.state = VPN_DOWN
         return views

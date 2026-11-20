@@ -21,7 +21,7 @@ from rich.rule import Rule
 from cinemind import __version__
 from cinemind.cli.ui import console, status_table
 from cinemind.cli.wizard import Cancelled, resume, wizard
-from cinemind.core.config import Config, config_path, data_dir, load_config, log_dir, save_config
+from cinemind.core.config import Config, config_path, data_dir, load_config, save_config
 from cinemind.core.store import Store
 from cinemind.planning.selection import SelectionError
 from cinemind.sources.stremio.client import AddonError
@@ -121,5 +121,5 @@ def run_home() -> None:
         except Exception as exc:
             log.exception("Unexpected error in the home menu")
             console.print(f"[red]Something went wrong: {escape(str(exc))}[/]")
-            console.print(f"[dim]Details are in the log: {log_dir() / 'cinemind.log'}[/]")
+            console.print("[dim]Details: cinemind logs --level error[/]")
         console.print()

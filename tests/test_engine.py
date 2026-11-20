@@ -301,3 +301,86 @@ async def test_when_the_matcher_finds_nothing_that_episode_is_replanned(tmp_path
     assert (library / "Show" / "Season 01" / "Show - S01E01 - Pilot.mkv").exists()
     assert rec.done == ["S01E01"] and rec.dead == [(seeder["info_hash"], "file not in torrent")]
     assert not (library / "Show" / "Season 01" / "Show - S01E07 - Pilot.mkv").exists()
+
+
+# -- the VPN kill switch -----------------------------------------------------------------------
+
+
+def _guarded_engine(tmp_path: Path, listener, vpn: dict[str, str]) -> TorrentEngine:
+    config = Config(metadata_timeout=20, stall_timeout=30)
+    return TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
+                         settings=LOCAL, guard=lambda: vpn["down"])  # fmt: skip
+
+
+async def test_with_the_vpn_down_no_session_starts_and_the_files_say_why(tmp_path, seeder,
+                                                                         monkeypatch):  # fmt: skip
+    import cinemind.engines.torrent as engine_module
+
+    monkeypatch.setattr(engine_module, "GUARD_INTERVAL", 0.0)
+    library = tmp_path / "library"
+    vpn = {"down": "the VPN interface (NordLynx) is down or missing"}
+    rec = Recorder()
+    engine = _guarded_engine(tmp_path, rec, vpn)
+    engine.add_job(_job(seeder, library, 2, seeder["index"]["Show.S01E02.1080p.WEB.mkv"]))
+    for _ in range(5):
+        engine.step()
+    assert engine._ses is None and len(engine.pending) == 1  # nothing touched the network
+    (view,) = engine.snapshot()
+    assert view.error == vpn["down"] and [t.state for t in view.targets] == ["vpn down"]
+
+    vpn["down"] = ""  # the VPN is back: it starts on its own
+    await asyncio.wait_for(engine.run(), 60)
+    engine.shutdown()
+    assert (library / "Show" / "Season 01" / "Show - S01E02 - Pilot.mkv").exists()
+    assert rec.jobs_done == [seeder["info_hash"]] and rec.dead == []
+
+
+async def test_a_vpn_drop_pauses_the_session_and_its_return_resumes_it(tmp_path, seeder,
+                                                                       monkeypatch):  # fmt: skip
+    import cinemind.engines.torrent as engine_module
+
+    monkeypatch.setattr(engine_module, "GUARD_INTERVAL", 0.0)
+    library = tmp_path / "library"
+    vpn = {"down": ""}
+    rec = Recorder()
+    engine = _guarded_engine(tmp_path, rec, vpn)
+    engine.add_job(_job(seeder, library, 2, seeder["index"]["Show.S01E02.1080p.WEB.mkv"]))
+    engine.step()
+    assert engine._ses is not None and len(engine.active) == 1
+    spy = engine._ses = _SettingsSpy(engine._ses)
+
+    vpn["down"] = "the VPN interface (NordLynx) is down or missing"
+    engine.step()
+    assert engine._ses.is_paused() and engine.blocked == vpn["down"]
+    background = ("enable_dht", "enable_lsd", "enable_upnp", "enable_natpmp")
+    assert spy.applied == [dict.fromkeys(background, False)]  # nothing talks on its own either
+    (active,) = engine.active.values()
+    # An hour-long outage must not read as a dead swarm or a stall once it's over.
+    active.added_at -= 3600
+    active.last_progress_at -= 3600
+    engine._blocked_since -= 3600
+
+    vpn["down"] = ""
+    await asyncio.wait_for(engine.run(), 60)
+    assert spy.resumed == 1 and spy.applied[1] == {k: LOCAL[k] for k in background}  # as set
+    engine.shutdown()
+    assert (library / "Show" / "Season 01" / "Show - S01E02 - Pilot.mkv").exists()
+    assert rec.jobs_done == [seeder["info_hash"]] and rec.dead == []
+
+
+class _SettingsSpy:
+    """A libtorrent session that records the settings applied to it and its resumes."""
+
+    def __init__(self, session):
+        self._session, self.applied, self.resumed = session, [], 0
+
+    def apply_settings(self, settings):
+        self.applied.append(dict(settings))
+        self._session.apply_settings(settings)
+
+    def resume(self):
+        self.resumed += 1
+        self._session.resume()
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)

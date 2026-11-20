@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -164,6 +165,22 @@ async def test_a_release_that_cant_play_is_quarantined_for_review(delivery_cfg, 
     assert dismiss(store, job_id, "S01E01") == "S01E01"
     row = store.delivery(job_id, "S01E01")
     assert row.stage == "dismissed" and "Find another release" in row.review  # kept
+
+
+async def test_each_stage_change_is_logged_with_the_job_and_the_file(
+    delivery_cfg, store, friends, caplog
+):
+    job_id, targets = _job(store, delivery_cfg, friends, episodes=(1,))
+    d = _delivery(delivery_cfg, store, job_id, friends, _tools(targets, REJECT), Subtitles())
+    with caplog.at_level(logging.INFO, logger="cinemind.pipeline.delivery"):
+        d.submit(targets[0])
+        await d.wait()
+    stages = [(r.job_id, r.item, r.stage, r.levelname) for r in caplog.records
+              if hasattr(r, "stage")]  # fmt: skip
+    assert stages == [(job_id, "S01E01", s, level) for s, level in (
+        ("pending", "INFO"), ("subtitling", "INFO"), ("ingesting", "INFO"),
+        ("quarantined", "WARNING"))]  # fmt: skip
+    assert "won't play directly" in caplog.records[-1].getMessage()  # and why
 
 
 async def test_a_failed_ingest_can_be_retried(delivery_cfg, store, friends):

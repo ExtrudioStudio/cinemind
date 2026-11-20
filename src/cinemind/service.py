@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections import deque
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -72,10 +73,21 @@ def is_imdb_id(text: str) -> bool:
     return text.startswith("tt") and text[2:].isdigit()
 
 
+_TRAILING_YEAR = re.compile(r"^(?P<title>.*\S)\s+\(?(?P<year>(?:19|20)\d{2})\)?$")
+
+
 async def search_titles(
     sess: Session, query: str, type_: MediaType | None = None
 ) -> list[SearchResult]:
+    """Titles for a query. A year at the end ("Night of the Living Dead 1968") is the release
+    year when a result has it, and those results come first. Otherwise the words are searched
+    as typed, so a year that's part of the title ("Blade Runner 2049") still works."""
     types: tuple[MediaType, ...] = (type_,) if type_ else ("series", "movie")
+    if found := _TRAILING_YEAR.match(query.strip()):
+        hits = await search(sess.client, sess.meta_addons, found["title"], types)
+        dated = [hit for hit in hits if hit.release_info[:4] == found["year"]]
+        if dated:
+            return dated + [hit for hit in hits if hit not in dated]
     return await search(sess.client, sess.meta_addons, query, types)
 
 

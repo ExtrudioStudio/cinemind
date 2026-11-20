@@ -25,7 +25,7 @@ from cinemind.cli.ui import (
     selection_line,
     title_overview,
 )
-from cinemind.core.config import Config, data_dir, log_dir
+from cinemind.core.config import Config, data_dir
 from cinemind.core.models import Key, MediaType, Title
 from cinemind.core.store import ATTENTION, Store
 from cinemind.pipeline.postprocess import log_folder
@@ -303,8 +303,7 @@ def report(store: Store, job_id: int, status: str, runner: DownloadRunner | None
         count = len(runner.engine.listener_errors)
         console.print(
             f"[yellow]{count} internal error{'s' if count != 1 else ''} while recording "
-            f"progress[/]; the downloads continued. Details are in the log: "
-            f"{log_dir() / 'cinemind.log'}"
+            f"progress[/]; the downloads continued. Details: cinemind logs --level error"
         )
 
 

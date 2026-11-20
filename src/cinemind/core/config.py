@@ -144,6 +144,8 @@ class Config(BaseModel):
     max_active_torrents: int = 3
     listen_interfaces: str = "0.0.0.0:6881,[::]:6881"
     outgoing_interfaces: str = ""  # e.g. the VPN adapter name, to keep traffic on the VPN
+    # With outgoing_interfaces set: BitTorrent doesn't start, and pauses, while it is down.
+    vpn_kill_switch: bool = True
     seed_ratio: float = 0.0  # 0 = stop as soon as the wanted files are complete
     metadata_timeout: int = 120
     stall_timeout: int = 180

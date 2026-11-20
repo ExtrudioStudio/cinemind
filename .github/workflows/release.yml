@@ -1,0 +1,125 @@
+name: Release
+
+# Push a tag such as v0.2.0 (the version in pyproject.toml, with its CHANGELOG.md section):
+# this builds the wheel and sdist, makes the GitHub Release with those notes, and publishes the
+# image to ghcr.io/<owner>/cinemind. A tag with a pre-release part (v0.3.0rc1) makes a
+# pre-release and doesn't move the image's "latest". PyPI is opt-in: set the repository
+# variable PUBLISH_TO_PYPI to "true" once a trusted publisher is set up for the "pypi"
+# environment on pypi.org.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.13.0"
+
+jobs:
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: The tag is the project's version
+        id: version
+        run: |
+          version="$(uv version --short)"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match the version in pyproject.toml ($version)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if printf '%s' "$version" | grep -Eq '(a|b|rc|dev)[0-9]*$'; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Release notes from CHANGELOG.md
+        run: uv run --no-project python tools/release_notes.py "${{ steps.version.outputs.version }}" > notes.md
+      - run: uv build
+      - name: The wheel installs and runs
+        run: |
+          uv venv /tmp/check --python 3.13
+          uv pip install --python /tmp/check dist/*.whl
+          /tmp/check/bin/cinemind --version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: |
+            dist/
+            notes.md
+
+  github-release:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "cinemind ${{ needs.build.outputs.version }}" \
+            --notes-file notes.md \
+            ${{ needs.build.outputs.prerelease == 'true' && '--prerelease' || '' }}
+
+  image:
+    name: Container image
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/cinemind
+          tags: |
+            type=pep440,pattern={{version}},value=${{ needs.build.outputs.version }}
+            type=pep440,pattern={{major}}.{{minor}},value=${{ needs.build.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.build.outputs.prerelease == 'false' }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  pypi:
+    name: PyPI
+    needs: build
+    if: vars.PUBLISH_TO_PYPI == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1

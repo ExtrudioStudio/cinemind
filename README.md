@@ -44,7 +44,9 @@ uv run cinemind get "Night of the Living Dead" "1080p" --type movie --dry-run
 1 file from 1 direct download · 10.7 GB
 ```
 
-Drop `--dry-run` to download it. `uv run cinemind shortcut` adds a desktop and Start menu
+Drop `--dry-run` to download it. `uv run cinemind doctor` checks what your settings need
+(FFmpeg, the NAS share, the Plex token, the VPN, Ollama) and says how to fix what's missing.
+`uv run cinemind shortcut` adds a desktop and Start menu
 icon that opens the home menu, and `uv tool install ".[torrent]"` gives you a global
 `cinemind` command.
 
@@ -53,6 +55,13 @@ needed. `torrent` adds BitTorrent; libtorrent has wheels for Windows, macOS and 
 Linux, and on other distributions cinemind works without it. `ai` adds plain-language
 requests, `mcp` adds the MCP server, and `all` adds everything:
 `pip install "cinemind[all]"`.
+
+Or in Docker, with BitTorrent, FFmpeg and the AI extras included (see
+[Running it unattended](#running-it-unattended)):
+
+```powershell
+docker run --rm -it -v cinemind:/cinemind -v ${PWD}/library:/library ghcr.io/extrudiostudio/cinemind get "Night of the Living Dead 1968" --yes
+```
 
 The first run creates `%APPDATA%\cinemind\config.toml`. **Upgrading from stremio-dl:** your
 `config.toml` and download history are copied over on the first run (the old files stay
@@ -83,6 +92,7 @@ One-shot:
 ```powershell
 cinemind get "Night of the Living Dead" "720p" --type movie   # asks before starting
 cinemind get tt0063350 "best" --type movie --yes              # by IMDb id, no confirmation
+cinemind get "Night of the Living Dead 1968" --source archive # only the Internet Archive
 cinemind get "Show" "s1 eps10 - s2 eps 3 /full hd" --dry-run  # series need a stream addon
 ```
 
@@ -97,6 +107,8 @@ Other commands:
 | `cinemind status` | Download jobs, their progress, and how their post-download commands ended |
 | `cinemind resume [JOB]` | Continue paused or interrupted jobs (Ctrl+C pauses) |
 | `cinemind handoff JOB` | Run `post_download_command` for a finished job's files still in the library |
+| `cinemind doctor [--offline] [--json]` | Check that what the settings need is in place, with the fix for what isn't |
+| `cinemind logs [--job N] [--item S01E02] [--level warning]` | What happened, from the structured log |
 | `cinemind sources` | The stream sources and which ones are on |
 | `cinemind shortcut` | Create the desktop (and Start menu) icon |
 | `cinemind config show` / `set KEY VALUE` / `reset` / `path` | Settings |
@@ -385,6 +397,73 @@ extra_tv_roots = ['\\nas\Media\TV Shows']
 extra_movie_roots = ['\\nas\Media\Movies']
 ```
 
+## Running it unattended
+
+### Is everything in place? `cinemind doctor`
+
+```
+    DOWNLOADS
+✓   TV library         D:\Media\TV Shows
+✓   BitTorrent         libtorrent 2.1.1.0
+✗   VPN                the VPN interface (NordLynx) is down or missing: BitTorrent won't
+                       start until it's up
+                       → Connect the VPN, or check the name. Up now: Wi-Fi, Tailscale
+    INGEST
+✓   ffmpeg             9.0.1 at C:\...\ffmpeg.exe
+–   Plex               plex_url isn't set: no library refreshes
+    AI
+✓   Pack-file judge    ollama/qwen2.5:7b at http://localhost:11434
+Not ready. 14 ok, 1 warning(s), 1 failed, 4 not set up
+```
+
+Each check is ok, a warning (a feature that won't work or will work worse), a failure
+(something the settings turn on that can't work now) or not set up. Every problem comes with
+its fix. `--offline` skips the checks that use the network (the metadata addon, Plex,
+Ollama). `--json` and the exit code (1 on any failure) are for scripts and containers. No
+secret's value is ever printed.
+
+### A VPN kill switch for BitTorrent
+
+With `outgoing_interfaces` set to your VPN adapter (`NordLynx`, `wg0`, or its address),
+BitTorrent only runs while that adapter is up. If it's down when a download starts, no
+torrent session is created at all: no listening port, no DHT, no port mapping. The files show
+**waiting for VPN** and start when it's back. If it drops mid-download, the session pauses,
+DHT and port mapping go off, and everything resumes when it returns. The outage doesn't count
+as a stalled torrent. Direct downloads from the Internet Archive aren't held back.
+`vpn_kill_switch = false` turns this off. See [ADR 0007](docs/adr/0007-vpn-kill-switch-waits.md).
+
+### Logs
+
+The log is JSON lines (`cinemind.jsonl` in the log folder, rotated at 2 MB). Each line has
+`ts`, `level`, `logger` and `msg`, like MediaPipeline v1's logs. A line about a download also
+says what it's about: `job_id`, `item` (the episode), `stage` (the delivery step),
+`info_hash` and `plan_id` (the MCP plan the job came from). Every step of a file's delivery is
+logged, with the reason when it went wrong.
+
+```powershell
+cinemind logs --job 12                       # the job's whole story
+cinemind logs --item S01E02 --level warning  # what went wrong with one file
+cinemind logs --job 12 --json | jq .msg      # as stored
+```
+
+### Docker
+
+The image (`ghcr.io/extrudiostudio/cinemind`, published with each release; until the first,
+`docker build -t cinemind .`) is Alpine, because libtorrent publishes musl wheels only. It
+has BitTorrent, FFmpeg, the AI extras and the MCP server. It runs as a non-root
+user. Settings, history and logs are kept in `/cinemind`; the libraries default to `/library`.
+Containers have no keyring, so secrets come from the environment: `CINEMIND_PLEX`,
+`CINEMIND_OPENSUBTITLES_API_KEY`, `CINEMIND_OPENSUBTITLES_PASSWORD` and `ANTHROPIC_API_KEY`.
+[`compose.yaml`](compose.yaml) wires these up, plus an optional Ollama service for the judge:
+
+```powershell
+docker compose run --rm cinemind doctor
+docker compose run --rm cinemind get "Night of the Living Dead 1968" --yes
+```
+
+For Claude Desktop, the MCP server runs in the container over stdio:
+`"command": "docker", "args": ["run", "-i", "--rm", "-v", "cinemind:/cinemind", "-v", "D:/Media:/library", "ghcr.io/extrudiostudio/cinemind", "mcp"]`.
+
 ## Settings
 
 `cinemind config show` lists everything. The ones you're most likely to change:
@@ -401,7 +480,7 @@ extra_movie_roots = ['\\nas\Media\Movies']
 | `stream_addons` | (empty) | Stremio addon manifest URLs; a *configured* URL keeps its options |
 | `max_active_torrents`, `max_active_http` | `3`, `2` | Downloads running at once |
 | `seed_ratio` | `0` | Seed after finishing until this upload ratio |
-| `outgoing_interfaces` | (empty) | Bind torrents to a VPN adapter so traffic can't leak |
+| `outgoing_interfaces`, `vpn_kill_switch` | (empty), `true` | Bind torrents to a VPN adapter, and hold them while it's down (see [the kill switch](#a-vpn-kill-switch-for-bittorrent)) |
 | `llm_enabled`, `llm_model`, `llm_effort` | `true`, `claude-opus-5-5`, `low` | Plain-language requests |
 | `judge_provider`, `judge_model`, `ollama_url` | `ollama`, `qwen2.5:7b`, `http://localhost:11434` | The [pack-file judge](#which-file-is-the-episode-the-pack-file-judge) (`anthropic` uses `llm_model`; `off`) |
 | `judge_min_confidence` | `medium` | Below this the judge abstains |
@@ -421,11 +500,19 @@ uv run python tools/make_icon.py   # redraw the icon (standard library only)
 ```
 
 CI runs these on Windows and Alpine Linux for Python 3.12 and 3.13, and checks that a
-plain Ubuntu install works without libtorrent. See [CONTRIBUTING.md](CONTRIBUTING.md).
+plain Ubuntu install works without libtorrent. It also builds the Docker image and runs
+`cinemind doctor` inside it. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+**Releasing:** set the version in `pyproject.toml`, move the notes from `## [Unreleased]` to a
+`## [X.Y.Z]` section in `CHANGELOG.md`, and push the tag `vX.Y.Z`. The release workflow checks
+that the tag and the version match. It then builds the wheel and sdist, makes the GitHub
+Release with that section's notes, and publishes the image. PyPI is opt-in: set the
+repository variable `PUBLISH_TO_PYPI` once a trusted publisher is set up.
 
 | Package | Contents |
 |---|---|
-| `cinemind.core` | Config, data models, the SQLite store |
+| `cinemind.core` | Config, data models, the SQLite store, structured logs, the VPN check |
+| `cinemind.doctor` | The checks behind `cinemind doctor` |
 | `cinemind.sources` | The source contract and registry, the Internet Archive source, the Stremio addon client |
 | `cinemind.planning` | Selection syntax, quality, filtering and ranking, the download plan, library paths |
 | `cinemind.engines` | Direct HTTP and BitTorrent engines, run side by side |
