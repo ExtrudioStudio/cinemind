@@ -67,6 +67,9 @@ class DownloadRunner:
             if found.how == "judge":
                 log.info("Judge placed %s in %s: %s (%s)", target.label, job.release,
                          found.index, found.reason)  # fmt: skip
+            elif found.rejected:
+                log.info("Judge's pick for %s in %s thrown out: %s", target.label, job.release,
+                         found.rejected)  # fmt: skip
             chosen.append(found.index)
             free = [f for f in free if f.index != found.index]
         return chosen

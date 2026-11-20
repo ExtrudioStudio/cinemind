@@ -31,6 +31,10 @@ working for this release.
   approve before a model runs. ADR 0006. On the local model (`qwen2.5:7b`), 93% of cases are
   right, against 33% for the name rules alone, but wrong picks rise from 3.3% to 6.6%. The run
   is recorded and replayed in the tests.
+- **Checks on the judge's pick**: a file named for another episode is thrown out, and the
+  answer counts as none. That covers another episode code, a season-relative number with no
+  sign of the season, or another episode's title. On the recorded replies, wrong picks fall to
+  0% and correct rises to 97%.
 - The name rules skip decoys (samples, trailers, previews, extras, deleted scenes, creditless
   openings) that carry an episode's code. A lone sample is no longer downloaded as the episode.
 - **After-download stages** (`auto_subtitles`, `auto_ingest`): each finished file gets a

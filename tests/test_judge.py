@@ -18,7 +18,15 @@ from cinemind.ai.ollama import OllamaLLM
 from cinemind.core.config import Config
 from cinemind.core.models import Episode, EpisodeRef, Title
 from cinemind.core.store import Store
-from cinemind.planning.matching import Located, PackFile, Wanted, is_decoy, locate, resolve
+from cinemind.planning.matching import (
+    Located,
+    PackFile,
+    Wanted,
+    contradiction,
+    is_decoy,
+    locate,
+    resolve,
+)
 
 R = EpisodeRef
 EVAL = Path(__file__).parent.parent / "evals" / "pack_matching"
@@ -98,6 +106,69 @@ async def test_without_an_answer_the_name_rules_stand():
     parts = [PackFile(0, "S02E05 Part 1.mkv", 1480), PackFile(1, "S02E05 Part 2.mkv", 1620)]
     got = await resolve(Wanted.from_title(SHOW, [R(2, 5)]), parts, silent)
     assert got.how == "ambiguous" and got.index == 1  # biggest, as before the judge
+
+
+# -- checks on the judge's pick (none of these names are in the eval) ------------------------------
+
+# 12 regular episodes in season 1, so S02E05 is episode 17 counted across seasons
+BAY = Title("tt2", "series", "Lantern Bay", 2016, episodes=[
+    Episode(0, 1, "A Winter Tale"), Episode(1, 1, "Arrivals"), Episode(1, 2, "The Storm"),
+    Episode(1, 3, "The Storm After"), *(Episode(1, e, f"Harbour {e}") for e in range(4, 13)),
+    *(Episode(2, e, f"Tidewater {e}") for e in range(1, 12)),
+    Episode(2, 12, "Endgame (1)"), Episode(2, 13, "Endgame (2)"),
+])  # fmt: skip
+
+
+def _check(ref: EpisodeRef, path: str, release: str = "Lantern Bay") -> str:
+    return contradiction(Wanted.from_title(BAY, [ref], release), PackFile(0, path, 1))
+
+
+@pytest.mark.parametrize(("ref", "path", "release", "says"), [
+    (R(0, 1), "LB/Lantern.Bay.S01E03.720p.mkv", "", "named S01E03, not S00E01"),
+    (R(1, 6), "LB/Lantern.Bay.S01E05-720p.WEB.mkv", "", "named S01E05"),  # 720p isn't E720
+    (R(2, 5), "LB/[Grp] Lantern Bay - 05 [720p][0A5B1C2D].mkv", "[Grp] Lantern Bay (01-12)",
+     "no sign of season 2"),
+    (R(1, 3), "LB/Lantern Bay - The Storm.mkv", "", 'another episode, "The Storm"'),
+])  # fmt: skip
+def test_a_pick_whose_name_points_at_another_episode_is_thrown_out(ref, path, release, says):
+    assert says in _check(ref, path, release)
+
+
+@pytest.mark.parametrize(("ref", "path", "release"), [
+    (R(2, 13), "LB/Lantern Bay S02E12 - Endgame Part 2.mkv", ""),  # a two-part finale's Part 2
+    (R(2, 4), "LB/Lantern.Bay.S02E03E04.mkv", ""),
+    (R(2, 4), "LB/Lantern.Bay.S02E03-04.1080p.mkv", ""),
+    (R(2, 4), "LB/lantern.bay.2x03-04.mkv", ""),
+    (R(2, 5), "LB/[Grp] Lantern Bay - 17 [720p].mkv", "[Grp] Lantern Bay (01-25)"),
+    (R(2, 5), "LB/[Grp] Lantern Bay S2 - 05 [720p].mkv", ""),
+    (R(2, 5), "LB/Lantern Bay 2nd Season - 05.mkv", ""),
+    (R(2, 5), "LB/Season 2/05.mkv", ""),
+    (R(2, 5), "LB/05.mkv", "Lantern Bay S02 1080p"),
+    (R(2, 5), "LB/lantern.bay.205.hdtv.mkv", ""),
+    (R(2, 5), "LB/[Grp] Lantern Bay - 05 - Tidewater 5.mkv", "[Grp] Lantern Bay (01-12)"),
+    (R(1, 3), "LB/Lantern Bay - The Storm After.mkv", ""),
+    (R(1, 3), "LB/lantern.bay.the.storm.after.1080p.h264.mkv", ""),
+    (R(0, 1), "LB/Specials/Lantern Bay - A Winter Tale (2017).mkv", ""),
+])  # fmt: skip
+def test_a_pick_whose_name_also_points_at_the_episode_is_kept(ref, path, release):
+    assert _check(ref, path, release) == ""
+
+
+async def test_a_thrown_out_pick_counts_as_no_answer_and_says_why():
+    async def judge(wanted, files):
+        return Located(0, "judge", reason="S01E03 is the first episode")
+
+    files = _files("LB/Lantern.Bay.S01E03.mkv", "LB/Lantern Bay - Arrivals.mkv")
+    wanted = Wanted.from_title(BAY, [R(0, 1)])
+    got = await resolve(wanted, files, judge)
+    assert (got.index, got.how) == (None, "none") and got.rejected.startswith("file 0: it's named")
+    assert (await resolve(wanted, files, judge, check=False)).index == 0  # how v2 ran
+
+
+def test_the_other_titles_are_for_the_checks_not_the_prompt():
+    wanted = Wanted.from_title(BAY, [R(1, 3)])
+    assert "The Storm" in wanted.other_titles and "The Storm After" not in wanted.other_titles
+    assert "Arrivals" not in document(wanted, _files("LB/x.mkv"))  # v2's prompts are unchanged
 
 
 # -- the judge -------------------------------------------------------------------------------------
@@ -291,24 +362,27 @@ def test_the_recorded_name_rule_runs_reproduce(tmp_path, variant, rules):
     assert fresh == grades(EVAL / "runs" / variant / "results.jsonl") and len(fresh) == 61
 
 
-def test_the_recorded_model_run_replays_to_the_committed_grades(tmp_path):
-    """v2 (qwen2.5:7b) from its cassette, for free: same prompts, same answers, same grades.
+@pytest.mark.parametrize(("variant", "checks"), [("v2", "off"), ("v3", "on")])
+def test_the_recorded_model_runs_replay_to_the_committed_grades(tmp_path, variant, checks):
+    """qwen2.5:7b's recorded replies, for free: same prompts, same answers, same grades. v2
+    took its picks as they came; v3 is the same replies through the checks on each pick.
 
     A change to the judge's prompt or the cases fails this (the recorded prompts no longer
     match), which is the point: rerun the model and commit the new variant with it.
     """
     (tmp_path / "_state.json").write_text((EVAL / "runs" / "_state.json").read_text("utf-8"),
                                           encoding="utf-8")  # fmt: skip
-    assert _eval_module().main(["--variant", "v2", "--reps", "2", "--flow", str(tmp_path),
+    assert _eval_module().main(["--variant", variant, "--reps", "2", "--checks", checks,
+                                "--flow", str(tmp_path),
                                 "--replay", str(EVAL / "cassettes" / "v2.jsonl")]) == 0  # fmt: skip
 
     def grades(path: Path) -> dict[tuple[str, int], dict]:
         rows = [json.loads(x) for x in path.read_text("utf-8").splitlines() if x]
         return {(r["prompt_id"], r["rep"]): r["grade"] for r in rows}
 
-    fresh = grades(tmp_path / "v2" / "results.jsonl")
-    assert fresh == grades(EVAL / "runs" / "v2" / "results.jsonl") and len(fresh) == 122
-    assert not (tmp_path / "v2" / "errors.jsonl").exists()
+    fresh = grades(tmp_path / variant / "results.jsonl")
+    assert fresh == grades(EVAL / "runs" / variant / "results.jsonl") and len(fresh) == 122
+    assert not (tmp_path / variant / "errors.jsonl").exists()
 
 
 def test_the_cases_are_what_the_generator_writes(tmp_path):

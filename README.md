@@ -172,10 +172,13 @@ through the same code the engine uses, and scores wrong picks separately from mi
 |---|---|---|---|
 | name rules only | 33% | 3.3% | 20% |
 | + judge on `qwen2.5:7b` (local) | 93% | 6.6% | 96% |
+| + checks on the judge's pick | 97% | 0% | 96% |
 
-The wrong picks are near misses, all answered with high confidence. One is a special taken for
-S01E01; another is a shorter title taken for the full one. Checks for those, and Claude as the
-comparison, are next.
+The judge's wrong picks were near misses, all answered with high confidence: a special taken
+for S01E01, and a shorter title taken for the full one. So its pick is checked against what the
+file's name already says. A file named for another episode is thrown out: a different episode
+code, a season-relative number with no sign of the season, or another episode's title. The
+checks were written after seeing those misses, and the eval says so.
 
 ### Use from an AI assistant (MCP)
 

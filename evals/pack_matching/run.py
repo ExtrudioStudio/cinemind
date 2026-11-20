@@ -236,7 +236,8 @@ async def run_case(
         started = time.monotonic()
         try:
             matching = resolve(wanted, files, tracked if judge else None,
-                               skip_decoys=a.name_rules == "current")  # fmt: skip
+                               skip_decoys=a.name_rules == "current",
+                               check=a.checks == "on")  # fmt: skip
             got = await asyncio.wait_for(matching, a.timeout_s or None)
         except TimeoutError:  # the ceiling also ends retries; the call may still finish unseen
             return None, _error(case, rep, "timeout", f"over {a.timeout_s}s", retries), []
@@ -265,6 +266,8 @@ async def run_case(
         judge_status = "bad_format"
     elif got.how == "judge":
         judge_status = "answered"
+    elif got.rejected:
+        judge_status = "rejected"  # the checks threw its pick out: the name rules' answer stands
     else:
         judge_status = "unsure"  # below judge_min_confidence: the name rules' answer stands
     picked, expected = got.index, case["expected"]
@@ -285,8 +288,8 @@ async def run_case(
         "latency_s": call.latency_s if call else latency, "retries": retries,
         "meta": {"picked": picked, "picked_path": path(picked), "expected": expected,
                  "expected_path": case["expected_path"], "how": got.how,
-                 "judge_status": judge_status, "reason": got.reason,
-                 "name_rules": a.name_rules},
+                 "judge_status": judge_status, "reason": got.reason, "rejected": got.rejected,
+                 "name_rules": a.name_rules, "checks": a.checks, "judge": a.judge},
     }  # fmt: skip
     if call is not None:
         trace = [{"role": "system", "content": call.system},
@@ -453,6 +456,10 @@ def summarize(flow: Path) -> str:
         tout = statistics.median(r["usage"]["output_tokens"] for r in asked) if asked else 0
         p50 = statistics.median(r["latency_s"] for r in asked) if asked else 0.0
         models = sorted({r["model"] for r in rows} - {"name-rules"}) or ["(name rules only)"]
+        if any(r["meta"].get("checks") == "on" for r in asked):
+            models = [f"{m} + checks" for m in models]
+        replayed = bool(asked) and all(r["meta"].get("judge") == "replay" for r in asked)
+        speed = "replayed" if replayed else f"{p50:.2f}s"  # a cassette has no timings
         cost = 0.0
         priced = True
         for r in [*rows, *errs]:
@@ -480,7 +487,7 @@ def summarize(flow: Path) -> str:
             f"| {vdir.name} | {', '.join(models)} | {correct:.0%} ±{half:.0%} ({len(means)} cases"
             f" x {reps}) | {wrong:.1%} | {statistics.fmean(present):.0%} | "
             f"{'-' if not nones else f'{none_ok:.0%}'} | {len(errs)} | "
-            f"{tin:.0f}/{tout:.0f} | {p50:.2f}s | {spend} |")  # fmt: skip
+            f"{tin:.0f}/{tout:.0f} | {speed} | {spend} |")  # fmt: skip
     if "baseline" in per_variant and len(per_variant) > 1:
         out += ["", "Paired difference in `correct` against the baseline (per case, 95% CI):", ""]
         base = per_variant["baseline"]
@@ -540,7 +547,7 @@ def self_check(cases: list[dict[str, Any]]) -> int:
         base = argparse.Namespace(variant="baseline", judge="oracle", model="", reps=1,
                                   concurrency=8, timeout_s=30.0, min_confidence="medium",
                                   record=False, replay=None, effort="low",
-                                  ollama_url="", name_rules="current")  # fmt: skip
+                                  ollama_url="", name_rules="current", checks="on")  # fmt: skip
         asyncio.run(run(base, flow, cases))
         rows = _rows(flow / "baseline", "results.jsonl")
         right = sum(r["grade"]["correct"] for r in rows)
@@ -593,6 +600,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--min-confidence", choices=["high", "medium"], default="medium")
     p.add_argument("--name-rules", choices=["current", "legacy"], default="current",
                    help="legacy: as before decoys were skipped (how baseline was run)")  # fmt: skip
+    p.add_argument("--checks", choices=["on", "off"], default="on",
+                   help="off: take the judge's pick unchecked (how v2 was run)")  # fmt: skip
     p.add_argument("--ollama-url", default="http://localhost:11434")
     p.add_argument(
         "--record", action="store_true", help="save replies to cassettes/<variant>.jsonl"

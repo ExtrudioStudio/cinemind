@@ -20,6 +20,9 @@ library.
    - The answer's schema is an enum of the ids of the files it was shown, plus `"none"`.
    - Confidence below `judge_min_confidence` counts as no answer.
    - File and torrent names reach it as data inside a JSON document, with `<` escaped.
+   - Its pick is checked against the file's name (`matching.contradiction`). A file named for
+     another episode is thrown out, and the answer counts as none: another episode code, a
+     season-relative number with no sign of that season, or another episode's title.
 3. **Local by default.** `judge_provider = "ollama"` runs `qwen2.5:7b` on the machine. That's
    free, offline, and keeps file names private. If it isn't installed, the judge abstains and
    behaviour is exactly the name rules. Claude (`anthropic`) is one setting away, behind the
@@ -36,8 +39,11 @@ library.
   could reach only 59/61, because the name rules picked a lone sample first. The decoy rule
   that fixed this is deterministic and free, and it halved wrong picks.
 - Whether the local model is good enough is a number in `docs/evals.md`, not an assumption.
-  The same goes for whether Claude is worth its cost here. If the local model's wrong-pick rate
-  is too high, the fix is a setting (`judge_min_confidence = "high"`, another model, or
-  `anthropic`), measured the same way.
+  The same goes for whether Claude is worth its cost here.
+- The local model's confidence turned out to be no use as a filter. It said "high" on 100 of
+  its 102 answers, including all four wrong picks, so `judge_min_confidence = "high"` would
+  have changed nothing. What did work was deterministic again: checking the pick against what
+  the file's name already says. On the recorded replies that took wrong picks from 6.6% to 0%
+  and correct from 93% to 97%, measured by replay with no model call.
 - The engine waits for the judge only for the files it asked about. The others download
   meanwhile, and a torrent never finishes while a match is pending.
