@@ -16,6 +16,7 @@ dependencies = [
     "guessit>=3.8",
     "keyring>=25.5",
     "numpy>=2.0",
+    "psutil>=6",
 ]
 
 [project.optional-dependencies]
@@ -50,6 +51,7 @@ dev = [
     "pytest-cov>=6.0",
     "respx>=0.21",
     "ruff>=0.5",
+    "types-psutil>=7.2.2.20261111",
 ]
 # The same as the "torrent" extra, as a group so `uv sync` installs it in a checkout. Leave it
 # out with `uv sync --no-group torrent` where libtorrent has no wheel (glibc Linux).

@@ -19,6 +19,7 @@ from rich.live import Live
 from cinemind.ai.judge import judge_from_config
 from cinemind.cli.ui import console, delivery_line, progress_table
 from cinemind.core.config import Config, data_dir
+from cinemind.core.logs import log_context
 from cinemind.core.models import FileTarget, TorrentJob
 from cinemind.core.store import DeliveryRow, Store, key_name
 from cinemind.engines.base import NOT_IN_TORRENT, JobView
@@ -157,8 +158,21 @@ class DownloadRunner:
         """Download the job's open torrents and direct downloads; return the job's final status.
 
         With ``display=False`` nothing is printed (the MCP server talks over stdout); the
-        latest progress is kept in :attr:`views` instead.
+        latest progress is kept in :attr:`views` instead. Everything logged meanwhile, in the
+        engines and the deliveries too, carries the job's id.
         """
+        with log_context(job_id=self.job_id):
+            files = sum(len(job.targets) for job, _ in torrents)
+            log.info("Job #%s (%s): %d file(s) to fetch", self.job_id, self.plan.title.name, files)
+            try:
+                status = await self._run(torrents, display)
+            except asyncio.CancelledError:
+                log.info("Job #%s paused", self.job_id)
+                raise
+            log.info("Job #%s %s", self.job_id, status)
+            return status
+
+    async def _run(self, torrents: list[tuple[TorrentJob, bytes | None]], display: bool) -> str:
         self.display = display
         self.batch_size = sum(len(job.targets) for job, _ in torrents) or self.batch_size
         for job, resume in torrents:

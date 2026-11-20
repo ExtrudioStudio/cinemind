@@ -486,6 +486,8 @@ def create_server(
             plan = a.plans.take(plan_id)
             check_plan(plan, a.cfg)  # again: settings may have changed since
             job_id = a.downloads.start(plan)
+            log.info("Job #%s started from plan %s (%s)", job_id, plan_id, plan.title.name,
+                     extra={"job_id": job_id, "plan_id": plan_id})  # fmt: skip
             return JobStarted(job_id=job_id, status=a.store.job(job_id).status,
                               files=plan.file_count, total_size=human_size(plan.total_size),
                               next_step=f"Follow it with job_status({job_id}).")  # fmt: skip

@@ -20,7 +20,7 @@ class TargetView:
     name: str
     size: int
     done: int
-    state: str  # queued | metadata | downloading | done | failed
+    state: str  # queued | metadata | downloading | done | failed | vpn down
 
 
 @dataclass

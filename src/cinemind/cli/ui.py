@@ -13,6 +13,7 @@ from rich.text import Text
 
 from cinemind.core.models import SearchResult, Title, TorrentJob
 from cinemind.core.store import DeliveryRow, JobRow
+from cinemind.doctor import Check
 from cinemind.engines.base import JobView
 from cinemind.planning import quality as q
 from cinemind.planning.planner import Plan
@@ -202,7 +203,8 @@ def progress_table(views: list[JobView]) -> Table:
     table.add_column("State")
 
     total = done = rate = 0
-    styles = {"done": "green", "failed": "red", "queued": "dim", "metadata": "yellow"}
+    styles = {"done": "green", "failed": "red", "queued": "dim", "metadata": "yellow",
+              "vpn down": "bold red"}  # fmt: skip
     for view in views:
         for i, t in enumerate(view.targets):
             total += t.size
@@ -211,6 +213,8 @@ def progress_table(views: list[JobView]) -> Table:
             state = t.state if view.state != "seeding" else "seeding"
             if t.state == "metadata":
                 state = "finding peers"
+            elif t.state == "vpn down":
+                state = "waiting for VPN"
             first = i == 0
             table.add_row(
                 t.label,
@@ -306,4 +310,50 @@ def delivery_line(row: DeliveryRow) -> Text:
         text.append(f" + {Path(row.subtitle).name}", style="dim")
     if row.review or row.error:
         text.append(f"\n    {row.review or row.error}")
+    return text
+
+
+_DOCTOR_MARKS = {"ok": ("✓", "green"), "warn": ("!", "yellow"), "fail": ("✗", "bold red"),
+                 "skip": ("–", "dim")}  # fmt: skip
+
+
+def doctor_table(checks: list[Check]) -> Table:
+    """`cinemind doctor`: a row per check, grouped by area, each fix under its check."""
+    table = Table(box=box.SIMPLE_HEAD, show_edge=False, show_header=False, pad_edge=False)
+    table.add_column("", width=1)
+    table.add_column("Check", style="bold", no_wrap=True)
+    table.add_column("Detail", overflow="fold")
+    area = ""
+    for check in checks:
+        if check.area != area:
+            if area:
+                table.add_row("", "", "")
+            area = check.area
+            table.add_row("", Text(area.upper(), style="dim"), "")
+        mark, style = _DOCTOR_MARKS[check.status]
+        detail = Text(check.detail, style="dim" if check.status == "skip" else "")
+        if check.fix and check.status != "ok":
+            detail.append(f"\n→ {check.fix}", style="cyan")
+        table.add_row(Text(mark, style=style), check.name, detail)
+    return table
+
+
+_LEVEL_STYLES = {"DEBUG": "dim", "INFO": "", "WARNING": "yellow", "ERROR": "red",
+                 "CRITICAL": "bold red"}  # fmt: skip
+
+
+def log_line(entry: dict) -> Text:
+    """One line of `cinemind logs`: time, level, what it's about, the message."""
+    ts = str(entry.get("ts", ""))
+    text = Text(ts[:19].replace("T", " "), style="dim")
+    level = str(entry.get("level", ""))
+    text.append(f" {level[:4]:<4}", style=_LEVEL_STYLES.get(level, ""))
+    about = [f"#{entry['job_id']}" if "job_id" in entry else "",
+             str(entry.get("item", "")), str(entry.get("stage", ""))]  # fmt: skip
+    if any(about):
+        text.append(" " + " ".join(a for a in about if a), style="cyan")
+    text.append(f" {entry.get('msg', '')}", style=_LEVEL_STYLES.get(level, ""))
+    if entry.get("error"):
+        last = str(entry["error"]).strip().splitlines()[-1]
+        text.append(f"\n    {last}", style="red")
     return text

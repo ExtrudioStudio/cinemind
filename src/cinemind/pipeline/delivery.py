@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from cinemind.core.config import Config
+from cinemind.core.logs import log_context
 from cinemind.core.models import EpisodeRef, FileTarget, Title
 from cinemind.core.store import OPEN_DELIVERY, DeliveryRow, Store, key_name
 from cinemind.ingest.runner import Ingester, IngestResult, Media
@@ -120,6 +121,7 @@ class Delivery:
         self._on_update = on_update
         self._slots = asyncio.Semaphore(max(1, cfg.max_delivery_jobs))
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._stages: dict[str, str] = {}  # the last stage logged per file
 
     @staticmethod
     def wanted(cfg: Config) -> bool:
@@ -170,16 +172,29 @@ class Delivery:
             return
         self._tasks[key] = asyncio.get_running_loop().create_task(self._run(key))
 
+    def _set(self, key: str, stage: str, **fields: Any) -> None:
+        """Record a file's stage, and log it when it changes (with why, when it went wrong)."""
+        self.store.set_delivery(self.job_id, key, stage, **fields)
+        if self._stages.get(key) == stage:
+            return
+        self._stages[key] = stage
+        why = fields.get("error") or fields.get("review") or ""
+        level = logging.WARNING if stage in ("failed", "quarantined", "needs_review") else (
+            logging.INFO)  # fmt: skip
+        log.log(level, "%s: %s%s", key, stage.replace("_", " "), f" ({why})" if why else "",
+                extra={"job_id": self.job_id, "item": key, "stage": stage})  # fmt: skip
+
     async def _run(self, key: str) -> None:
-        async with self._slots:
-            try:
-                await self._deliver(key)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # one bad file never stops the others
-                log.exception("Delivery of %s in job #%s failed", key, self.job_id)
-                self.store.set_delivery(self.job_id, key, "failed",
-                                        error=str(exc) or type(exc).__name__)  # fmt: skip
+        # Everything logged while this file is delivered (subtitle search, ingest) says so.
+        with log_context(job_id=self.job_id, item=key):
+            async with self._slots:
+                try:
+                    await self._deliver(key)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # one bad file never stops the others
+                    log.exception("Delivery of %s in job #%s failed", key, self.job_id)
+                    self._set(key, "failed", error=str(exc) or type(exc).__name__)
         row = self.store.delivery(self.job_id, key)
         if self._on_update is not None:
             try:
@@ -193,8 +208,8 @@ class Delivery:
         row = self.store.delivery(self.job_id, key)
         video = Path(row.path)
         if not video.is_file():
-            self.store.set_delivery(
-                self.job_id, key, "failed", attempt=True,
+            self._set(
+                key, "failed", attempt=True,
                 error=f"the file is no longer at {video}. If it was filed already, close this "
                       f"with `cinemind review dismiss {self.job_id} {key}`.",
             )  # fmt: skip
@@ -203,43 +218,43 @@ class Delivery:
         detail: dict[str, Any] = json.loads(row.detail or "{}")
         notes: list[str] = []
         subtitle = row.subtitle if row.subtitle and Path(row.subtitle).is_file() else None
-        self.store.set_delivery(self.job_id, key, row.stage, attempt=True)  # one per run
+        self._set(key, row.stage, attempt=True)  # one per run
 
         if self.cfg.auto_subtitles and subtitle is None:
-            self.store.set_delivery(self.job_id, key, "subtitling")
+            self._set(key, "subtitling")
             subtitle, note, detail["subtitles"] = await self._subtitle_stage(video, refs)
             if note:
                 notes.append(note)
-            self.store.set_delivery(self.job_id, key, "subtitling", subtitle=subtitle,
-                                    detail=json.dumps(detail))  # fmt: skip
+            self._set(key, "subtitling", subtitle=subtitle,
+                      detail=json.dumps(detail))  # fmt: skip
 
         if self.cfg.auto_ingest and row.target is None:
-            self.store.set_delivery(self.job_id, key, "ingesting")
+            self._set(key, "ingesting")
             result = await self._ingest().ingest(video, media_for(self.title, refs))
             detail["ingest"] = result.to_dict()
             if result.status in ("placed", "fixed"):
                 assert result.target is not None
                 video = Path(result.target)
                 subtitle = _moved(subtitle, result, self.cfg.subtitle_language) or subtitle
-                self.store.set_delivery(self.job_id, key, "ingesting", target=result.target,
-                                        subtitle=subtitle, detail=json.dumps(detail))  # fmt: skip
+                self._set(key, "ingesting", target=result.target,
+                          subtitle=subtitle, detail=json.dumps(detail))  # fmt: skip
             elif result.status == "quarantined":
                 reasons = result.verdict.reasons if result.verdict else []
                 why = "; ".join(reasons) or result.error or "rejected"
-                self.store.set_delivery(
-                    self.job_id, key, "quarantined", detail=json.dumps(detail),
+                self._set(
+                    key, "quarantined", detail=json.dumps(detail),
                     review=f"won't play directly on the TV ({why}); moved to {result.target}. "
                            "Find another release.",
                 )  # fmt: skip
                 return
             else:
-                self.store.set_delivery(self.job_id, key, "failed", detail=json.dumps(detail),
-                                        error=f"ingest: {result.error}")  # fmt: skip
+                self._set(key, "failed", detail=json.dumps(detail),
+                          error=f"ingest: {result.error}")  # fmt: skip
                 return
 
         stage = "needs_review" if notes else "delivered"
-        self.store.set_delivery(self.job_id, key, stage, review="; ".join(notes) or None,
-                                detail=json.dumps(detail))  # fmt: skip
+        self._set(key, stage, review="; ".join(notes) or None,
+                  detail=json.dumps(detail))  # fmt: skip
         if self._on_delivered is not None:
             try:
                 self._on_delivered(key, video)

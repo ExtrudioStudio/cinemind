@@ -5,11 +5,9 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import logging
 import sqlite3
 import sys
 from collections.abc import Coroutine
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -25,6 +23,8 @@ from cinemind.cli.shortcut import create_shortcuts
 from cinemind.cli.ui import (
     console,
     delivery_line,
+    doctor_table,
+    log_line,
     plan_table,
     search_table,
     selection_line,
@@ -53,6 +53,7 @@ from cinemind.core.config import (
     save_config,
     set_value,
 )
+from cinemind.core.logs import read_logs, setup_logging
 from cinemind.core.models import MediaType, Title
 from cinemind.core.secrets import KNOWN, SecretsUnavailable, delete_secret, get_secret, set_secret
 from cinemind.core.store import ATTENTION, Store, key_name
@@ -86,25 +87,6 @@ review_app = typer.Typer(
     "play directly on the TV, or the ingest failed. Without a command: list them.",
 )
 app.add_typer(review_app, name="review")
-
-
-def _setup_logging(verbose: bool) -> None:
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG if verbose else logging.INFO)
-    try:
-        log_dir().mkdir(parents=True, exist_ok=True)
-        handler = RotatingFileHandler(log_dir() / "cinemind.log", maxBytes=2_000_000,
-                                      backupCount=3, encoding="utf-8")  # fmt: skip
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-        root.addHandler(handler)
-    except OSError:
-        pass
-    if verbose:
-        err = logging.StreamHandler(sys.stderr)
-        err.setLevel(logging.DEBUG)
-        root.addHandler(err)
-    for noisy in ("httpx", "httpcore", "rebulk", "guessit"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def _run(coro: Coroutine[Any, Any, None]) -> None:
@@ -166,7 +148,7 @@ def main_callback(
     if carried:
         console.print("[cyan]Copied your stremio-dl settings and download history to cinemind:[/] "
                       + ", ".join(str(p) for p in carried), markup=True)  # fmt: skip
-    _setup_logging(verbose)
+    setup_logging(log_dir(), verbose)
     if ctx.invoked_subcommand is None:
         run_home()
 
@@ -618,6 +600,53 @@ def mcp_cmd(
         raise typer.Exit(1) from None
     console.file = sys.stderr  # stdout carries the protocol; nothing else may write there
     create_server(cfg=_cfg(), read_only=read_only).run("stdio")
+
+
+@app.command("doctor")
+def doctor_cmd(
+    offline: Annotated[
+        bool, typer.Option("--offline", help="Skip the checks that use the network.")
+    ] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the checks as JSON.")] = False,
+) -> None:
+    """Check that what cinemind needs is in place, and say how to fix what isn't.
+
+    Exit code 1 when a check fails."""
+    from cinemind.doctor import run_checks, summary
+
+    checks = asyncio.run(run_checks(_cfg(), offline=offline))
+    totals = summary(checks)
+    if as_json:
+        typer.echo(json.dumps({**totals, "checks": [c.to_dict() for c in checks]}, indent=2))
+    else:
+        console.print(doctor_table(checks))
+        verdict = "[green]Ready.[/]" if totals["healthy"] else "[red]Not ready.[/]"
+        console.print(f"{verdict} {totals['ok']} ok, {totals['warn']} warning(s), "
+                      f"{totals['fail']} failed, {totals['skip']} not set up")  # fmt: skip
+    raise typer.Exit(0 if totals["healthy"] else 1)
+
+
+@app.command("logs")
+def logs_cmd(
+    job: Annotated[int | None, typer.Option("--job", "-j", help="Only this job.")] = None,
+    item: Annotated[str | None, typer.Option("--item", help='e.g. "S01E02" or "movie"')] = None,
+    level: Annotated[
+        str, typer.Option("--level", "-l", help="debug, info, warning or error")
+    ] = "info",
+    last: Annotated[int, typer.Option("--last", "-n", help="How many lines (0 = all).")] = 50,
+    as_json: Annotated[bool, typer.Option("--json", help="The lines as stored.")] = False,
+) -> None:
+    """Show the log: what happened to a job, a file, or everything, newest last."""
+    entries = read_logs(log_dir(), job=job, item=item, level=level, last=last or None)
+    if as_json:
+        for entry in entries:
+            typer.echo(json.dumps(entry, ensure_ascii=False))
+        return
+    if not entries:
+        console.print("Nothing logged" + (" for that." if job or item else " yet."))
+        return
+    for entry in entries:
+        console.print(log_line(entry))
 
 
 @app.command("sources")
