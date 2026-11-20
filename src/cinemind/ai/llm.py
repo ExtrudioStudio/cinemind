@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 from pydantic import BaseModel
 
@@ -46,6 +47,31 @@ class LLMUnavailable(LLMError):
 
 class LLMRefused(LLMError):
     """The model (and its fallback) declined the request."""
+
+
+@dataclass
+class CallRecord:
+    """One model call as sent and received, for evals and their transcripts."""
+
+    model: str
+    system: str
+    user: str
+    text: str = ""
+    stop_reason: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    latency_s: float = 0.0
+
+
+class Backend(Protocol):
+    """What the AI features need from a model: a typed answer to one request."""
+
+    async def parse[T: BaseModel](
+        self, purpose: str, system: str, user: str, output: type[T], max_tokens: int = 2048,
+        *, calls: list[CallRecord] | None = None,
+    ) -> T: ...  # fmt: skip
 
 
 class LLM:
@@ -75,9 +101,11 @@ class LLM:
         return cls(cfg, client, store)
 
     async def parse[T: BaseModel](
-        self, purpose: str, system: str, user: str, output: type[T], max_tokens: int = 2048
-    ) -> T:
-        """Ask for an answer shaped like ``output``. ``purpose`` labels the call in the log."""
+        self, purpose: str, system: str, user: str, output: type[T], max_tokens: int = 2048,
+        *, calls: list[CallRecord] | None = None,
+    ) -> T:  # fmt: skip
+        """Ask for an answer shaped like ``output``. ``purpose`` labels the call in the log;
+        ``calls`` (evals) collects a :class:`CallRecord` of each completed call."""
         import anthropic
 
         started = time.monotonic()
@@ -121,6 +149,16 @@ class LLM:
             raise self._failed(purpose, started, "no_credentials", err) from exc
 
         self._record(purpose, started, response.stop_reason or "unknown", response)
+        if calls is not None:
+            usage = response.usage
+            calls.append(CallRecord(
+                model=str(response.model), system=system, user=user,
+                text="".join(getattr(b, "text", "") for b in response.content),
+                stop_reason=str(response.stop_reason), input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cache_read_tokens=usage.cache_read_input_tokens or 0,
+                cache_write_tokens=usage.cache_creation_input_tokens or 0,
+                latency_s=round(time.monotonic() - started, 3)))  # fmt: skip
         if response.stop_reason == "refusal":
             raise LLMRefused("The model declined this request.")
         if response.stop_reason == "max_tokens":

@@ -9,3 +9,8 @@ dist/
 .coverage.*
 coverage.xml
 htmlcov/
+
+# Eval outputs that a rerun rebuilds (see docs/evals.md)
+evals/**/traces/
+evals/**/report.html
+evals/**/trajectory/
