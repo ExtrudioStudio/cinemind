@@ -26,6 +26,13 @@ BUILTIN: dict[str, str] = {
     "internet-archive": "cinemind.sources.internet_archive:create",
     "stremio-addons": "cinemind.sources.stremio.streams:create",
 }
+# Short names for the built-ins, for `cinemind get --source`.
+ALIASES: dict[str, str] = {
+    "archive": "internet-archive",
+    "ia": "internet-archive",
+    "addons": "stremio-addons",
+    "stremio": "stremio-addons",
+}
 
 
 def _import(ref: str) -> SourceFactory:
@@ -49,6 +56,22 @@ def factories() -> dict[str, Callable[[], SourceFactory]]:
 
 def available() -> list[str]:
     return sorted(factories())
+
+
+def resolve(names: list[str]) -> list[str]:
+    """Source names as given on the command line: comma lists split, short names expanded,
+    each name once. An unknown name is a ``ValueError`` that lists the available ones."""
+    known = available()
+    wanted = [part.strip().lower() for name in names for part in name.split(",") if part.strip()]
+    resolved = [ALIASES.get(name, name) for name in wanted]
+    unknown = [name for name, full in zip(wanted, resolved, strict=True) if full not in known]
+    if unknown:
+        short = ", ".join(f"{alias} = {full}" for alias, full in ALIASES.items())
+        raise ValueError(
+            f"Unknown stream source {', '.join(map(repr, unknown))}. "
+            f"Available: {', '.join(known)} (short names: {short})."
+        )
+    return list(dict.fromkeys(resolved))
 
 
 def load_sources(names: list[str], ctx: SourceContext) -> list[StreamSource]:

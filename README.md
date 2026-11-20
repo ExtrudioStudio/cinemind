@@ -92,6 +92,7 @@ One-shot:
 ```powershell
 cinemind get "Night of the Living Dead" "720p" --type movie   # asks before starting
 cinemind get tt0063350 "best" --type movie --yes              # by IMDb id, no confirmation
+cinemind get "Night of the Living Dead 1968" --source archive # only the Internet Archive
 cinemind get "Show" "s1 eps10 - s2 eps 3 /full hd" --dry-run  # series need a stream addon
 ```
 

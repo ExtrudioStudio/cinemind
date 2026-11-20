@@ -58,7 +58,8 @@ working for this release.
 - A headless service layer (`cinemind.service`) with a one-at-a-time background download queue.
 - **Stream sources.** Downloads come from pluggable sources (`stream_sources`, and
   `cinemind sources` to list them). Other packages can add one through the `cinemind.sources`
-  entry point.
+  entry point. `cinemind get --source archive` (`-s`, repeatable) limits one download to the
+  named sources without changing the settings.
 - **Internet Archive source**, on by default: public-domain films (Public Domain Mark or CC0
   only) as direct downloads.
 - **Direct HTTP downloads**: resumable with `Range`, size- and MD5-checked before the file is

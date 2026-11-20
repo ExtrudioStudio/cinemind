@@ -66,7 +66,7 @@ from cinemind.planning.planner import Plan
 from cinemind.planning.quality import parse_quality
 from cinemind.planning.selection import Selection, SelectionError, parse_selection, split_spec
 from cinemind.service import Session
-from cinemind.sources.registry import available
+from cinemind.sources.registry import available, resolve
 from cinemind.sources.stremio.catalog import search
 from cinemind.sources.stremio.client import AddonError
 
@@ -206,9 +206,18 @@ def get_cmd(
     prefer_packs: Annotated[
         bool | None, typer.Option("--prefer-packs/--no-prefer-packs", help="Favor season packs.")
     ] = None,
+    source: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--source",
+            "-s",
+            help="Only these stream sources, e.g. archive (internet-archive) or addons "
+            "(stremio-addons). Repeat it or use commas. See `cinemind sources`.",
+        ),
+    ] = None,
 ) -> None:
     """Find, plan and download in one go."""
-    cfg = _cfg()
+    cfg = _only_sources(_cfg(), source)
     prompt = interactive() and not yes
     media = _media_type(type_)
     if media is None and selection and split_spec(selection)[0]:
@@ -241,6 +250,18 @@ def get_cmd(
             await download(cfg, plan)
 
     _run(go())
+
+
+def _only_sources(cfg: Config, names: list[str] | None) -> Config:
+    """The settings with ``stream_sources`` limited to ``--source`` for this run, if given.
+    A source that's off in the settings can be named too: naming it is the choice."""
+    if not names:
+        return cfg
+    try:
+        sources = resolve(names)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--source") from None
+    return cfg.model_copy(update={"stream_sources": sources})
 
 
 async def _read_selection(text: str, title: Title, cfg: Config, store: Store) -> Selection:

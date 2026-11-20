@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 import respx
+import typer
 from typer.testing import CliRunner
 
 from cinemind.cli import app as cli
@@ -172,6 +174,16 @@ def test_registry_finds_plugins_through_entry_points(cfg, monkeypatch):
     assert registry.load_sources(["my-archive"], SourceContext(cfg, AddonClient(cfg))) == [plugin]
 
 
+def test_source_names_from_the_command_line():
+    assert registry.resolve(["archive"]) == ["internet-archive"]
+    assert registry.resolve(["IA, addons", "internet-archive"]) == [
+        "internet-archive",
+        "stremio-addons",
+    ]
+    with pytest.raises(ValueError, match="'torrentio'.*short names: archive = internet-archive"):
+        registry.resolve(["archive", "torrentio"])
+
+
 # -- defaults, migration and CLI -----------------------------------------------------------
 
 
@@ -217,6 +229,27 @@ def test_sources_command_and_the_stream_addon_notice(cfg):
     assert result.exit_code == 0 and "right to" in result.output
     quiet = runner.invoke(cli.app, ["config", "set", "tv_root", "D:/TV"])
     assert quiet.exit_code == 0 and "right to" not in quiet.output
+
+
+def test_get_source_limits_only_this_run(cfg, monkeypatch):
+    save_config(cfg)  # both sources on
+    seen: list[list[str]] = []
+
+    @asynccontextmanager
+    async def session(run_cfg):
+        seen.append(run_cfg.stream_sources)
+        raise typer.Exit(3)  # stop before any network
+        yield
+
+    monkeypatch.setattr(cli, "open_session", session)
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["get", "Night of the Living Dead 1968", "--source", "archive"])
+    assert result.exit_code == 3 and seen == [["internet-archive"]]
+    assert config_mod.load_config().stream_sources == cfg.stream_sources  # settings unchanged
+
+    wrong = runner.invoke(cli.app, ["get", "Night of the Living Dead", "-s", "torrentio"])
+    assert wrong.exit_code == 2 and "Unknown stream source 'torrentio'" in wrong.output
+    assert len(seen) == 1  # refused before a session opened
 
 
 def test_planning_a_direct_download(cfg):
