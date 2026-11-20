@@ -20,6 +20,15 @@ working for this release.
   checks each candidate against the video's speech before saving it. A late subtitle, or one
   timed for 25 fps, is retimed; one for another cut or film is skipped. Saved as UTF-8 SRT
   (Windows-1255 Hebrew is converted). A numpy port of MediaPipeline v1's sync check.
+- **After-download stages** (`auto_subtitles`, `auto_ingest`): each finished file gets a
+  subtitle, then is checked, fixed and filed, at most `max_delivery_jobs` at a time next to
+  the running downloads. Every step is recorded per file (`state.db` schema v4), so an
+  interrupted run resumes from the step it was at. `cinemind status` has a Delivery column.
+- **Review instead of a dialog**: what needs a person (no subtitle matched, a quarantined
+  release, a failed ingest) is listed by `cinemind review`, then retried, given a subtitle you
+  found, or dismissed. MCP has the same as `list_reviews` and `resolve_review`.
+  `cinemind deliver` runs the stages for files downloaded before they were turned on.
+- ADRs 0003-0005: no transcoding on the NAS, the PowerShell port, and the delivery stages.
 - `cinemind secrets` stores tokens and passwords in the system keyring (or `CINEMIND_*`
   environment variables), never in config.toml.
 - **MCP server** (`cinemind mcp`, `mcp` extra): an AI assistant can search, plan and, with a
@@ -53,6 +62,8 @@ working for this release.
   `CINEMIND_BATCH_SIZE`).
 
 ### Fixed
+- Pausing or stopping while FFmpeg or ffprobe runs stops that process too, instead of leaving
+  it running on its own.
 - Error messages no longer lose bracketed text such as `cinemind[torrent]` (Rich markup).
 - A file that finished downloading but couldn't be renamed into place (it stays `.part`) is
   now marked **failed**. Before, the job ended as "done" and the file was silently skipped.

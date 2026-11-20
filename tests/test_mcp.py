@@ -89,15 +89,18 @@ async def test_tools_their_annotations_and_the_read_only_mode(app):
         tools = {t.name: t for t in (await client.list_tools()).tools}
     assert set(tools) == {"search_titles", "title_info", "plan_download", "plan_request",
                           "start_download", "job_status", "list_jobs", "pause_job",
-                          "resume_job"}  # fmt: skip
+                          "resume_job", "list_reviews", "resolve_review"}  # fmt: skip
     assert tools["plan_download"].annotations.read_only_hint is True  # planning changes nothing
     assert tools["start_download"].annotations.read_only_hint is False
     assert tools["start_download"].annotations.destructive_hint is False
+    assert tools["list_reviews"].annotations.read_only_hint is True
+    assert tools["resolve_review"].annotations.read_only_hint is False
     assert all(t.output_schema for t in tools.values())  # typed results for the agent
 
     async with Client(create_server(app=app, read_only=True)) as client:
         names = {t.name for t in (await client.list_tools()).tools}
     assert "start_download" not in names and "pause_job" not in names and "plan_download" in names
+    assert "list_reviews" in names and "resolve_review" not in names
 
 
 async def test_tool_schemas_match_the_snapshot(app):
@@ -236,3 +239,41 @@ async def test_plan_download_accepts_plain_words_for_the_selection(app):
 
 def test_snapshot_exists():
     assert Path(SNAPSHOT).is_file()
+
+
+# -- reviews after a download ----------------------------------------------------------------------
+
+
+async def test_reviews_are_listed_retried_and_dismissed(app, friends):
+    from .test_delivery import _job
+
+    store = app.store
+    job_id, targets = _job(store, app.cfg, friends, episodes=(1, 2))
+    for target, stage in zip(targets, ("needs_review", "quarantined"), strict=True):
+        key = target.refs[0].code
+        store.start_delivery(job_id, key, str(target.final_path), key)
+        store.set_delivery(job_id, key, stage, review=f"{stage}: because")
+    async with Client(create_server(app=app)) as client:
+        listed = (await ok(client, "list_reviews"))["items"]
+        assert [(i["item"], i["stage"]) for i in listed] == [("S01E01", "needs_review"),
+                                                             ("S01E02", "quarantined")]  # fmt: skip
+        assert listed[0]["file"] == targets[0].final_path.name  # a name, not the full path
+        assert listed[0]["title"] == "Friends" and listed[0]["reason"] == "needs_review: because"
+
+        off = await refused(client, "resolve_review", job_id=job_id, item="S01E01", action="retry")
+        assert "Delivery is off" in off
+        app.downloads.cfg = app.cfg.model_copy(update={"auto_subtitles": True})
+        bad = await refused(client, "resolve_review", job_id=job_id, item="S01E02", action="retry")
+        assert "another release" in bad
+
+        acked = await ok(client, "resolve_review", job_id=job_id, item="s01e01", action="retry")
+        assert acked["status"] == "retrying" and "S01E01" in acked["message"]
+        await _settle()
+        assert store.delivery(job_id, "S01E01").stage == "pending"
+        assert FakeRunner.instances[-1].job_id == job_id  # queued: the runner delivers it
+
+        gone = await ok(client, "resolve_review", job_id=job_id, item="S01E02", action="dismiss")
+        assert gone["status"] == "dismissed"
+        assert (await ok(client, "list_reviews"))["items"] == []
+        status = await ok(client, "job_status", job_id=job_id)
+        assert status["deliveries"] == {"pending": 1, "dismissed": 1}

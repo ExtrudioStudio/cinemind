@@ -12,10 +12,12 @@ from typing import Any
 import questionary
 from rich.markup import escape
 from rich.status import Status
+from rich.text import Text
 
 from cinemind import service
 from cinemind.cli.ui import (
     console,
+    delivery_summary,
     human_size,
     movie_resolutions,
     plan_table,
@@ -25,7 +27,7 @@ from cinemind.cli.ui import (
 )
 from cinemind.core.config import Config, data_dir, log_dir
 from cinemind.core.models import Key, MediaType, Title
-from cinemind.core.store import Store
+from cinemind.core.store import ATTENTION, Store
 from cinemind.pipeline.postprocess import log_folder
 from cinemind.pipeline.runner import DownloadRunner
 from cinemind.planning import quality as q
@@ -264,7 +266,7 @@ async def resume(cfg: Config, job_id: int | None = None) -> None:
             return
         for row in reversed(rows):
             torrents = store.open_torrents(row.id)
-            if not torrents:
+            if not torrents and not store.open_deliveries(row.id):
                 store.finish_job(row.id)
                 continue
             console.print(f"[bold]Resuming job #{row.id}: {row.title}[/]")
@@ -284,6 +286,12 @@ def report(store: Store, job_id: int, status: str, runner: DownloadRunner | None
     failed = row.counts.get("failed", 0)
     color = {"done": "green", "partial": "yellow", "failed": "red"}.get(status, "cyan")
     console.print(f"[{color}]Job #{job_id} {status}[/]: {done} downloaded, {failed} failed.")
+    if row.deliveries:
+        attention = sum(row.deliveries.get(s, 0) for s in ATTENTION)
+        line = Text("Delivery: ").append(delivery_summary(row.deliveries))
+        if attention:
+            line.append("  (`cinemind review` shows what needs you)", style="dim")
+        console.print(line)
     if runner and runner.handed_off:
         count = len(runner.handed_off)
         console.print(

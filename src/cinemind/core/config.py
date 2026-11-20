@@ -171,6 +171,13 @@ class Config(BaseModel):
     opensubtitles_username: str = ""
     subtitle_max_candidates: int = 4
 
+    # After each download: find a subtitle (in subtitle_language), then ingest the file (needs
+    # ingest_root). Both off by default. What needs a person is listed by `cinemind review`.
+    # The post-download command, if any, runs after these, on the file where it ended up.
+    auto_subtitles: bool = False
+    auto_ingest: bool = False
+    max_delivery_jobs: int = 2  # files processed at once; a weak NAS copes with two
+
     # HTTP
     http_concurrency: int = 4
     http_timeout: float = 20.0

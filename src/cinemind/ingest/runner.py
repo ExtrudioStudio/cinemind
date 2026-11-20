@@ -224,7 +224,7 @@ class Ingester:
             if dry_run:
                 result.status = "dry-run"
                 return
-            self._quarantine(source, quarantined, dest, verdict.reasons, verdict)
+            await self._quarantine(source, quarantined, dest, verdict.reasons, verdict)
             result.status = "quarantined"
             return
         if dest.exists() and not overwrite:
@@ -233,14 +233,16 @@ class Ingester:
             result.status = "dry-run"
             return
 
+        # Moves run in a thread: from a local disk to a share they copy gigabytes, and the
+        # pipeline runs them next to live downloads in the same event loop.
         if verdict.verdict == "COMPLIANT":
-            move(source, dest, overwrite)
+            await asyncio.to_thread(move, source, dest, overwrite)
             result.status = "placed"
         else:
             fixed = await self._fix(source, logical, out_ext, verdict, dest, result)
             if not fixed:
                 return  # quarantined inside _fix
-            move(fixed, dest, overwrite)
+            await asyncio.to_thread(move, fixed, dest, overwrite)
             if not keep_source:
                 source.unlink(missing_ok=True)
             result.status = "fixed"
@@ -259,7 +261,8 @@ class Ingester:
             tmp.unlink(missing_ok=True)
             detail = done.stderr.decode("utf-8", "replace").strip()
             quarantined = unique_path(self.root / self.cfg.ingest_quarantine_dir / logical)
-            self._quarantine(source, quarantined, dest, [f"ffmpeg failed: {detail}"], verdict)
+            await self._quarantine(source, quarantined, dest, [f"ffmpeg failed: {detail}"],
+                                   verdict)  # fmt: skip
             result.status, result.target, result.error = "quarantined", str(quarantined), (
                 "ffmpeg failed")  # fmt: skip
             return None
@@ -275,9 +278,9 @@ class Ingester:
                                f"{verdict.duration_sec:g}s")  # fmt: skip
         return tmp
 
-    def _quarantine(self, source: Path, quarantined: Path, intended: Path, reasons: list[str],
-                    verdict: Verdict) -> None:  # fmt: skip
-        move(source, quarantined)
+    async def _quarantine(self, source: Path, quarantined: Path, intended: Path,
+                          reasons: list[str], verdict: Verdict) -> None:  # fmt: skip
+        await asyncio.to_thread(move, source, quarantined)
         lines = [f"QUARANTINED {datetime.now():%Y-%m-%dT%H:%M:%S}", f"source : {source}",
                  f"intended: {intended}", "", "Reasons:", *(f" - {r}" for r in reasons), "",
                  json.dumps({"verdict": verdict.verdict, "reasons": verdict.reasons,

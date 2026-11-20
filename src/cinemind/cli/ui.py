@@ -12,7 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from cinemind.core.models import SearchResult, Title, TorrentJob
-from cinemind.core.store import JobRow
+from cinemind.core.store import DeliveryRow, JobRow
 from cinemind.engines.base import JobView
 from cinemind.planning import quality as q
 from cinemind.planning.planner import Plan
@@ -245,6 +245,7 @@ def status_table(rows: list[JobRow]) -> Table:
     table.add_column("Failed", justify="right")
     table.add_column("Status")
     table.add_column("Hand-off")
+    table.add_column("Delivery")
     table.add_column("Updated", style="dim")
     colors = {"done": "green", "partial": "yellow", "failed": "red", "paused": "cyan",
               "running": "cyan"}  # fmt: skip
@@ -254,7 +255,7 @@ def status_table(rows: list[JobRow]) -> Table:
         table.add_row(
             str(r.id), r.title, r.quality, f"{finished}/{total}", str(r.counts.get("failed", 0)),
             Text(r.status, style=colors.get(r.status, "")), handoff_summary(r.handoffs),
-            r.updated.replace("T", " ")[:16],
+            delivery_summary(r.deliveries), r.updated.replace("T", " ")[:16],
         )  # fmt: skip
     return table
 
@@ -268,4 +269,41 @@ def handoff_summary(states: dict[str, int]) -> Text:
             if text:
                 text.append(", ")
             text.append(f"{states[state]} {state}", style=styles[state])
+    return text
+
+
+DELIVERY_STYLES = {"delivered": "green", "needs_review": "yellow", "quarantined": "red",
+                   "failed": "red", "pending": "cyan", "subtitling": "cyan", "ingesting": "cyan",
+                   "dismissed": "dim"}  # fmt: skip
+
+
+def delivery_summary(stages: dict[str, int]) -> Text:
+    """``3 delivered, 1 needs review`` for a job's files (empty when delivery is off)."""
+    text = Text()
+    running = sum(stages.get(s, 0) for s in ("pending", "subtitling", "ingesting"))
+    parts = [(stages.get("delivered", 0), "delivered", "delivered"),
+             (stages.get("needs_review", 0), "needs review", "needs_review"),
+             (stages.get("quarantined", 0), "quarantined", "quarantined"),
+             (stages.get("failed", 0), "failed", "failed"),
+             (running, "to do", "pending")]  # fmt: skip
+    for count, label, stage in parts:
+        if count:
+            if text:
+                text.append(", ")
+            text.append(f"{count} {label}", style=DELIVERY_STYLES[stage])
+    return text
+
+
+def delivery_line(row: DeliveryRow) -> Text:
+    """One line about a file's delivery, for the live output and ``cinemind review``."""
+    marks = {"delivered": "✓", "needs_review": "!", "quarantined": "✗", "failed": "✗"}
+    style = DELIVERY_STYLES.get(row.stage, "")
+    text = Text(f"{marks.get(row.stage, '·')} ", style=style)
+    text.append(f"#{row.job_id} {row.key} ", style="bold")
+    text.append(row.stage.replace("_", " "), style=style)
+    text.append(f"  {Path(row.path).name}", style="dim")
+    if row.subtitle:
+        text.append(f" + {Path(row.subtitle).name}", style="dim")
+    if row.review or row.error:
+        text.append(f"\n    {row.review or row.error}")
     return text

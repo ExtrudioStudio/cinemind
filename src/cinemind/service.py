@@ -19,6 +19,7 @@ from cinemind.core.config import Config, cache_dir
 from cinemind.core.models import Candidate, Key, MediaType, SearchResult, Title
 from cinemind.core.store import Store
 from cinemind.engines.base import JobView
+from cinemind.pipeline.delivery import Delivery, reopen
 from cinemind.pipeline.runner import DownloadRunner
 from cinemind.planning.planner import Plan, build_plan
 from cinemind.planning.selection import Selection
@@ -169,6 +170,20 @@ class Downloads:
             return True
         return False
 
+    def redeliver(self, job_id: int, key: str) -> str:
+        """Run a file's delivery again (subtitle, ingest): in the job's runner when it is
+        running, else by queueing the job. Returns the key as stored."""
+        if not Delivery.wanted(self.cfg):
+            raise ValueError("Delivery is off: set auto_subtitles or auto_ingest to true.")
+        key = reopen(self.store, job_id, key)
+        if self._current is not None and self._current[0] == job_id:
+            delivery: Delivery | None = getattr(self._current[1], "delivery", None)
+            if delivery is not None:
+                delivery.retry(key)
+            return key
+        self.enqueue(job_id)
+        return key
+
     def resume(self, job_id: int) -> None:
         """Queue a paused or interrupted job again. KeyError if there is no such job."""
         row = self.store.job(job_id)
@@ -215,7 +230,7 @@ class Downloads:
 
     async def _run_one(self, job_id: int) -> None:
         torrents = self.store.open_torrents(job_id)
-        if not torrents:
+        if not torrents and not self.store.open_deliveries(job_id):
             self.store.finish_job(job_id)
             return
         self.store.set_job_status(job_id, "running")

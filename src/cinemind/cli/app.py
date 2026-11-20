@@ -22,7 +22,14 @@ from cinemind.ai.intent import best_match, read_request, selection_text, underst
 from cinemind.ai.llm import LLM, SETUP_HINT, LLMError
 from cinemind.cli.home import run_home
 from cinemind.cli.shortcut import create_shortcuts
-from cinemind.cli.ui import console, plan_table, search_table, selection_line, status_table
+from cinemind.cli.ui import (
+    console,
+    delivery_line,
+    plan_table,
+    search_table,
+    selection_line,
+    status_table,
+)
 from cinemind.cli.wizard import (
     Cancelled,
     ask_selection,
@@ -32,6 +39,7 @@ from cinemind.cli.wizard import (
     make_plan,
     open_session,
     pick_title,
+    report,
     resume,
     show_overview,
 )
@@ -47,10 +55,12 @@ from cinemind.core.config import (
 )
 from cinemind.core.models import MediaType, Title
 from cinemind.core.secrets import KNOWN, SecretsUnavailable, delete_secret, get_secret, set_secret
-from cinemind.core.store import Store
+from cinemind.core.store import ATTENTION, Store, key_name
 from cinemind.ingest.naming import Kind
 from cinemind.ingest.runner import Ingester, Media
+from cinemind.pipeline.delivery import Delivery, dismiss
 from cinemind.pipeline.postprocess import hand_off_job, log_folder, new_batch
+from cinemind.pipeline.runner import DownloadRunner
 from cinemind.planning.planner import Plan
 from cinemind.planning.quality import parse_quality
 from cinemind.planning.selection import Selection, SelectionError, parse_selection, split_spec
@@ -70,6 +80,12 @@ app.add_typer(config_app, name="config")
 secrets_app = typer.Typer(help="Store tokens and passwords in the system keyring.",
                           no_args_is_help=True)  # fmt: skip
 app.add_typer(secrets_app, name="secrets")
+review_app = typer.Typer(
+    invoke_without_command=True,
+    help="Files that need you after their download: no subtitle matched, the release can't "
+    "play directly on the TV, or the ingest failed. Without a command: list them.",
+)
+app.add_typer(review_app, name="review")
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -101,7 +117,8 @@ def _run(coro: Coroutine[Any, Any, None]) -> None:
         console.print("Cancelled.")
         raise typer.Exit(1) from None
     except (AddonError, SelectionError, ValueError, LookupError, LLMError) as exc:
-        console.print(f"[red]{escape(str(exc))}[/]")
+        message = exc.args[0] if isinstance(exc, KeyError) and exc.args else exc  # no quotes
+        console.print(f"[red]{escape(str(message))}[/]")
         raise typer.Exit(1) from None
 
 
@@ -377,6 +394,151 @@ def handoff_cmd(
         console.print(f"  {path.name}")
     console.print(f"[cyan]{len(started)} file(s) handed to the post-download command[/] "
                   f"[dim](logs: {log_folder()})[/]")  # fmt: skip
+
+
+def _delivery_runner(cfg: Config, store: Store, job_id: int) -> DownloadRunner:
+    if not Delivery.wanted(cfg):
+        raise ValueError(
+            "Delivery is off. Turn on a stage first, e.g. `cinemind config set auto_ingest "
+            "true` or `cinemind config set auto_subtitles true`."
+        )
+    return DownloadRunner(cfg, store, job_id, store.load_plan(job_id))
+
+
+@app.command("deliver")
+def deliver_cmd(
+    job_id: Annotated[int, typer.Argument(help="Job number (see `cinemind status`).")],
+) -> None:
+    """Subtitle and ingest a job's files that were downloaded without it.
+
+    For files downloaded before auto_subtitles or auto_ingest was turned on."""
+    cfg = _cfg()
+
+    async def go() -> None:
+        store = Store(data_dir() / "state.db")
+        try:
+            runner = _delivery_runner(cfg, store, job_id)
+            assert runner.delivery is not None
+            seen = {row.key for row in store.deliveries(job_id)}
+            for job in store.finished_torrents(job_id):
+                for target in job.targets:
+                    key = key_name(target.refs[0] if target.refs else None)
+                    if key not in seen and target.final_path.is_file():
+                        runner.delivery.submit(target)
+            if not store.open_deliveries(job_id):
+                console.print(f"Nothing to deliver in job #{job_id}: its files had their "
+                              "delivery (`cinemind review` lists any that need you).")  # fmt: skip
+                return
+            status = await runner.run([])
+            report(store, job_id, status, runner)
+        finally:
+            store.close()
+
+    _run(go())
+
+
+@review_app.callback()
+def review_list(
+    ctx: typer.Context,
+    all_: Annotated[bool, typer.Option("--all", help="Also delivered and dismissed ones.")] = False,
+) -> None:
+    if ctx.invoked_subcommand is not None:
+        return
+    store = Store(data_dir() / "state.db")
+    try:
+        rows = store.deliveries(stages=None if all_ else ATTENTION, limit=100)
+    finally:
+        store.close()
+    if not rows:
+        console.print("Nothing needs you." if not all_ else "No deliveries yet.")
+        return
+    for row in rows:
+        console.print(delivery_line(row))
+    console.print("\n[dim]cinemind review retry JOB ITEM · cinemind review subtitle JOB ITEM FILE"
+                  " · cinemind review dismiss JOB ITEM[/]")  # fmt: skip
+
+
+ItemArg = Annotated[str, typer.Argument(help='The file\'s episode ("S01E02") or "movie".')]
+JobArg = Annotated[int, typer.Argument(help="Job number.")]
+
+
+@review_app.command("retry")
+def review_retry(job_id: JobArg, item: ItemArg) -> None:
+    """Run a file's delivery again, e.g. once the share or the subtitle provider is back."""
+    cfg = _cfg()
+
+    async def go() -> None:
+        store = Store(data_dir() / "state.db")
+        try:
+            runner = _delivery_runner(cfg, store, job_id)
+            assert runner.delivery is not None
+            runner.delivery.retry(item)
+            await runner.run([])
+        finally:
+            store.close()
+
+    _run(go())
+
+
+@review_app.command("subtitle")
+def review_subtitle(
+    job_id: JobArg,
+    item: ItemArg,
+    file: Annotated[
+        Path,
+        typer.Argument(
+            help="A subtitle you found (.srt, .ass, .vtt).", exists=True, dir_okay=False
+        ),
+    ],  # fmt: skip
+    lang: Annotated[str | None, typer.Option("--lang", help="e.g. he, en")] = None,
+) -> None:
+    """Use a subtitle you found yourself for a file.
+
+    It's saved next to the video as UTF-8 SRT, retimed if the audio check finds it early, late
+    or timed for the other frame rate."""
+    from cinemind.subtitles.finder import adopt_subtitle
+
+    cfg = _cfg()
+
+    async def go() -> None:
+        store = Store(data_dir() / "state.db")
+        try:
+            row = store.delivery(job_id, item)
+            video = Path(row.path)
+            if not video.is_file():
+                raise ValueError(f"The video is no longer at {video}.")
+            with console.status("Checking it against the audio…"):
+                out, sync = await adopt_subtitle(cfg, video, file, lang)
+            stage = "delivered" if row.stage == "needs_review" else row.stage
+            store.set_delivery(job_id, row.key, stage, subtitle=str(out), error=row.error,
+                               review=None if stage == "delivered" else row.review)  # fmt: skip
+        finally:
+            store.close()
+        console.print(f"[green]Saved[/] {escape(str(out))}")
+        if sync is None:
+            console.print("[dim]Not checked against the audio (no FFmpeg, or the video's "
+                          "audio couldn't be read).[/]")  # fmt: skip
+        elif sync.status in ("shifted", "rescaled"):
+            console.print(f"[cyan]Retimed[/] ({sync.status}, {sync.offset:+.1f}s).")
+        elif sync.status != "synced":
+            console.print(f"[yellow]The audio check found no match ({sync.status}); saved "
+                          "anyway, as you chose it.[/]")  # fmt: skip
+
+    _run(go())
+
+
+@review_app.command("dismiss")
+def review_dismiss(job_id: JobArg, item: ItemArg) -> None:
+    """Stop listing a file (you've dealt with it)."""
+    store = Store(data_dir() / "state.db")
+    try:
+        key = dismiss(store, job_id, item)
+    except (KeyError, ValueError) as exc:
+        console.print(f"[red]{escape(str(exc.args[0]))}[/]")
+        raise typer.Exit(1) from None
+    finally:
+        store.close()
+    console.print(f"Dismissed {key} of job #{job_id}.")
 
 
 @app.command("shortcut")
