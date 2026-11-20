@@ -1,4 +1,5 @@
-"""SQLite state: download jobs, per-episode items, per-torrent resume data and hand-offs.
+"""SQLite state: download jobs, per-episode items, per-torrent resume data, hand-offs and
+deliveries (what happened to each file after its download: subtitles, ingest, review).
 
 The database is opened in WAL mode so ``cinemind status`` (or a post-download hand-off recording
 its result) can read and write while a download is running. Writes go through :meth:`Store._tx`,
@@ -99,10 +100,33 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 );
 """
 
-MIGRATIONS = (SCHEMA_V1, SCHEMA_V2, SCHEMA_V3)
+# Version 4: one row per downloaded file for the stages that follow the download (see
+# cinemind.pipeline.delivery), so an interrupted run resumes them and a person can review them.
+SCHEMA_V4 = """
+CREATE TABLE IF NOT EXISTS deliveries (
+    job_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    refs TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    target TEXT,
+    subtitle TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    review TEXT,
+    error TEXT,
+    detail TEXT,
+    updated TEXT NOT NULL,
+    PRIMARY KEY (job_id, key)
+);
+CREATE INDEX IF NOT EXISTS deliveries_stage ON deliveries (stage);
+"""
+
+MIGRATIONS = (SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4)
 SCHEMA_VERSION = len(MIGRATIONS)
 
 OPEN_TORRENT = ("queued", "active", "paused")
+OPEN_DELIVERY = ("pending", "subtitling", "ingesting")  # not finished: resumed by the next run
+ATTENTION = ("needs_review", "quarantined", "failed")  # finished, but a person should look
 
 
 def key_name(key: Key) -> str:
@@ -125,6 +149,7 @@ class JobRow:
     counts: dict[str, int]
     handoffs: dict[str, int] = field(default_factory=dict)  # HandoffRow.state -> count
     error: str | None = None  # why the whole job failed, when it did
+    deliveries: dict[str, int] = field(default_factory=dict)  # DeliveryRow.stage -> count
 
 
 @dataclass
@@ -147,6 +172,27 @@ class HandoffRow:
         if self.exit_code is None:
             return "running"
         return "ok" if self.exit_code == 0 else "failed"
+
+
+@dataclass
+class DeliveryRow:
+    job_id: int
+    key: str  # the file's first episode ("S01E02"), or "movie"
+    refs: str  # every episode in the file, comma-separated
+    source: str  # where the download left the file
+    stage: str
+    target: str | None  # where the ingest put it
+    subtitle: str | None  # the subtitle saved next to it
+    attempts: int
+    review: str | None  # what a person should look at
+    error: str | None
+    detail: str | None  # JSON: the ingest result and the subtitle search log
+    updated: str
+
+    @property
+    def path(self) -> str:
+        """Where the file is now."""
+        return self.target or self.source
 
 
 class Store:
@@ -283,9 +329,15 @@ class Store:
                     (r["id"],),
                 ).fetchall()
             )
+            deliveries = dict(
+                self.db.execute(
+                    "SELECT stage, COUNT(*) FROM deliveries WHERE job_id = ? GROUP BY stage",
+                    (r["id"],),
+                ).fetchall()
+            )
             out.append(JobRow(r["id"], r["title"], r["type"], r["quality"], r["status"],
                               r["created"], r["updated"], counts, handoffs,
-                              r["error"]))  # fmt: skip
+                              r["error"], deliveries))  # fmt: skip
         return out
 
     def job(self, job_id: int) -> JobRow:
@@ -309,11 +361,15 @@ class Store:
             )
 
     def finish_job(self, job_id: int) -> str:
-        """Set the final status from the items' states and return it."""
+        """Set the final status from the items' states and return it.
+
+        A job with downloads or deliveries left to do is ``paused``: ``resume`` continues it.
+        """
         open_ = self.db.execute(
             "SELECT COUNT(*) FROM torrents WHERE job_id = ? AND status IN (?, ?, ?)",
             (job_id, *OPEN_TORRENT),
         ).fetchone()[0]
+        open_ += len(self.open_deliveries(job_id))
         counts = dict(
             self.db.execute(
                 "SELECT status, COUNT(*) FROM items WHERE job_id = ? GROUP BY status", (job_id,)
@@ -458,6 +514,76 @@ class Store:
             "SELECT * FROM handoffs WHERE job_id = ? ORDER BY id", (job_id,)
         ).fetchall()
         return [HandoffRow(**dict(r)) for r in rows]
+
+    # -- deliveries (subtitles, ingest and review after a download) ---------------------------
+
+    def start_delivery(self, job_id: int, key: str, source: str, refs: str = "") -> None:
+        """Record a freshly downloaded file as ``pending``, forgetting any earlier delivery."""
+        with self._tx():
+            self.db.execute(
+                "INSERT INTO deliveries (job_id, key, refs, source, stage, updated) "
+                "VALUES (?, ?, ?, ?, 'pending', ?) ON CONFLICT (job_id, key) DO UPDATE SET "
+                "refs = excluded.refs, source = excluded.source, stage = 'pending', "
+                "target = NULL, subtitle = NULL, attempts = 0, review = NULL, error = NULL, "
+                "detail = NULL, updated = excluded.updated",
+                (job_id, key, refs, source, _now()),
+            )
+
+    def set_delivery(
+        self,
+        job_id: int,
+        key: str,
+        stage: str,
+        *,
+        target: str | None = None,
+        subtitle: str | None = None,
+        review: str | None = None,
+        error: str | None = None,
+        detail: str | None = None,
+        attempt: bool = False,
+    ) -> None:
+        """Move a delivery to ``stage``. ``target``, ``subtitle`` and ``detail`` keep their old
+        value when not given; ``review`` and ``error`` are replaced (cleared when not given)."""
+        with self._tx():
+            cur = self.db.execute(
+                "UPDATE deliveries SET stage = ?, target = COALESCE(?, target), "
+                "subtitle = COALESCE(?, subtitle), review = ?, error = ?, "
+                "detail = COALESCE(?, detail), attempts = attempts + ?, updated = ? "
+                "WHERE job_id = ? AND key = ?",
+                (stage, target, subtitle, review, error, detail, int(attempt), _now(), job_id,
+                 key),
+            )  # fmt: skip
+            if cur.rowcount == 0:
+                raise KeyError(f"No delivery for {key} in job #{job_id}")
+
+    def delivery(self, job_id: int, key: str) -> DeliveryRow:
+        """One file's delivery (the key is case-insensitive); KeyError when there is none."""
+        row = self.db.execute(
+            "SELECT * FROM deliveries WHERE job_id = ? AND key = ? COLLATE NOCASE",
+            (job_id, key),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"No delivery for {key} in job #{job_id}")
+        return DeliveryRow(**dict(row))
+
+    def deliveries(
+        self, job_id: int | None = None, stages: tuple[str, ...] | None = None, limit: int = -1
+    ) -> list[DeliveryRow]:
+        """Deliveries, newest job first, optionally of one job and in some stages."""
+        where: list[str] = []
+        args: list[object] = []
+        if job_id is not None:
+            where.append("job_id = ?")
+            args.append(job_id)
+        if stages:
+            where.append(f"stage IN ({', '.join('?' * len(stages))})")
+            args.extend(stages)
+        sql = "SELECT * FROM deliveries" + (f" WHERE {' AND '.join(where)}" if where else "")
+        rows = self.db.execute(sql + " ORDER BY job_id DESC, key LIMIT ?", (*args, limit))
+        return [DeliveryRow(**dict(r)) for r in rows.fetchall()]
+
+    def open_deliveries(self, job_id: int) -> list[DeliveryRow]:
+        return self.deliveries(job_id, OPEN_DELIVERY)
 
     # -- audit trail: agent tool calls and LLM calls -----------------------------------------
 

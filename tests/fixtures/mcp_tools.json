@@ -29,6 +29,14 @@
    "type": "object"
   }
  },
+ "list_reviews": {
+  "description": "Downloaded files that need the user: no subtitle matched the audio, the release\ncan't play directly on the TV (quarantined), or filing it into the library failed.",
+  "input": {
+   "properties": {},
+   "title": "list_reviewsArguments",
+   "type": "object"
+  }
+ },
  "pause_job": {
   "description": "Pause a running or queued job; its progress is kept.",
   "input": {
@@ -124,6 +132,36 @@
     "request"
    ],
    "title": "plan_requestArguments",
+   "type": "object"
+  }
+ },
+ "resolve_review": {
+  "description": "Act on a file from list_reviews. retry: run its subtitle search and filing again\n(once the cause is fixed). dismiss: stop listing it (the user has dealt with it).",
+  "input": {
+   "properties": {
+    "action": {
+     "enum": [
+      "retry",
+      "dismiss"
+     ],
+     "title": "Action",
+     "type": "string"
+    },
+    "item": {
+     "title": "Item",
+     "type": "string"
+    },
+    "job_id": {
+     "title": "Job Id",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "job_id",
+    "item",
+    "action"
+   ],
+   "title": "resolve_reviewArguments",
    "type": "object"
   }
  },

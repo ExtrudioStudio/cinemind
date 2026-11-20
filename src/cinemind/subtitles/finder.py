@@ -18,6 +18,7 @@ was tried, so the CLI (or an agent) can ask you.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import tempfile
 from collections.abc import Awaitable, Callable
@@ -166,7 +167,8 @@ async def find_subtitle(
             if len(cues) < MIN_CUES:
                 result.log.append(f"{label}: only {len(cues)} cues")
                 continue
-            sync = _check(cues, sets) if sets else None
+            # numpy work: off the event loop, which may be running downloads too
+            sync = await asyncio.to_thread(_check, cues, sets) if sets else None
             result.log.append(f"{label}: {sync.status if sync else 'no audio check'} "
                               f"{sync.detail if sync else ''}".rstrip())  # fmt: skip
             accepted = (sync is not None and sync.status in ACCEPTED) or (
@@ -187,6 +189,45 @@ async def find_subtitle(
         else f"found {len(cands)} candidate(s), but none matched this file's audio timing"
     )  # fmt: skip
     return result
+
+
+async def adopt_subtitle(
+    cfg: Any, video: Path, subtitle: Path, language: str | None = None, sync_check: bool = True
+) -> tuple[Path, SyncResult | None]:
+    """Save a subtitle a person picked next to the video, as clean UTF-8 SRT.
+
+    It is checked against the audio like a found one, and retimed when it is shifted or timed
+    for the other frame rate. It is saved even when the check finds no match: the person
+    decided. Returns where it was saved and the check's result (None without FFmpeg).
+    """
+    import shutil
+
+    from cinemind.ingest.probe import ToolMissing, find_tool, probe
+
+    language = (language or cfg.subtitle_language).lower()
+    out = video.with_name(f"{video.stem}.{language}.srt")
+    try:
+        ffmpeg: str | None = find_tool("ffmpeg", cfg.ffmpeg_path)
+        ffprobe: str | None = find_tool("ffprobe", cfg.ffprobe_path)
+    except ToolMissing:
+        ffmpeg = ffprobe = None
+    with tempfile.TemporaryDirectory(prefix="cinemind-subs-") as tmp:
+        copy = Path(tmp) / f"picked{subtitle.suffix.lower()}"  # converting writes next to it
+        shutil.copyfile(subtitle, copy)
+        cues = parse(await to_srt_text(copy, ffmpeg))
+    if not cues:
+        raise ValueError(f"no subtitle cues found in {subtitle.name}")
+    sync = None
+    if sync_check and ffmpeg and ffprobe:
+        try:
+            sets = await audio_sets(video, await probe(video, ffprobe), ffmpeg)
+            sync = await asyncio.to_thread(_check, cues, sets) if sets else None
+        except Exception as exc:  # an unreadable video: the person's choice still stands
+            log.warning("Audio check of %s failed: %s", video, exc)
+    retime = sync is not None and sync.status in ACCEPTED
+    scale, offset = (sync.scale, sync.offset) if sync and retime else (1.0, 0.0)
+    out.write_text(format_srt(cues, scale, offset), encoding="utf-8-sig", newline="")
+    return out, sync
 
 
 async def find_for_video(

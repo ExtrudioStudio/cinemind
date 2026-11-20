@@ -8,6 +8,7 @@ on a NAS costs a few kilobytes, not the whole file.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
@@ -60,7 +61,13 @@ async def run_tool(program: str, *args: str) -> Completed:
         program, *args, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE, creationflags=flags,
     )  # fmt: skip
-    stdout, stderr = await proc.communicate()
+    try:
+        stdout, stderr = await proc.communicate()
+    except asyncio.CancelledError:  # paused or stopped: don't leave FFmpeg running on its own
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        await proc.wait()
+        raise
     return Completed(proc.returncode or 0, stdout, stderr)
 
 

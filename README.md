@@ -162,6 +162,7 @@ logged with its token usage in `state.db` (`llm_calls`). The model is `llm_model
 | `plan_download`, `plan_request` | Build a plan from a selection or a plain-language request. Downloads nothing. |
 | `start_download` | Start a plan by its `plan_id` |
 | `job_status`, `list_jobs`, `pause_job`, `resume_job` | Follow and control jobs |
+| `list_reviews`, `resolve_review` | Files that need you after their download; retry or dismiss one |
 
 Guardrails:
 
@@ -282,9 +283,45 @@ names there (`Show (1999) {tvdb-81797}`, `Movie (2010) {imdb-tt1375666}`) are re
 
 ## After a download
 
+### Subtitle, ingest, review
+
+Turn on the stages you want, and every finished file goes through them on its own:
+
+```powershell
+cinemind config set auto_subtitles true   # a subtitle that matches the audio (see above)
+cinemind config set auto_ingest true      # check, fix and file it for Plex (needs ingest_root)
+```
+
+Each file moves through `pending → subtitling → ingesting`, and ends as one of:
+- `delivered`;
+- `needs_review`: no subtitle matched, but the file is filed anyway;
+- `quarantined`: the release can't play directly on the TV;
+- `failed`: the share was unreachable, for example.
+
+Every step is recorded in `state.db`. If cinemind stops half-way (Ctrl+C, a crash, a reboot),
+the job stays `paused` and `cinemind resume` finishes the files from the step they were at.
+At most `max_delivery_jobs` (2) files are processed at once, next to the running downloads.
+
+Nothing waits for you in the middle of the night. What needs you is listed afterwards:
+
+```powershell
+cinemind review                         # what needs you, and why
+cinemind review retry 12 S01E03         # run it again, e.g. once the share is back
+cinemind review subtitle 12 S01E03 C:\Downloads\found.srt   # use a subtitle you found
+cinemind review dismiss 12 S01E04       # you've dealt with it
+cinemind deliver 9                      # files downloaded before the stages were on
+```
+
+`cinemind status` has a **Delivery** column (`3 delivered, 1 needs review`). An AI assistant
+sees the same list through the MCP tools `list_reviews` and `resolve_review`. The design is in
+[ADR 0005](docs/adr/0005-recorded-delivery-stages.md).
+
+### Your own command
+
 Set `post_download_command` to run a command for every finished file, for example a script
-that checks it and moves it to a NAS. It starts only once the download is complete (a season
-pack hands over all its episodes at the end). It runs in the background, in its own hidden
+that checks it and moves it to a NAS. With the stages above turned on, it runs after them, on
+the file where it ended up. It starts only once the download is complete (a season pack hands
+over all its episodes at the end). It runs in the background, in its own hidden
 console, so it keeps going if you return to the menu or quit. `cinemind status` shows how it
 ended, and its output goes to `%LOCALAPPDATA%\cinemind\Logs\post-download\`.
 
@@ -331,6 +368,7 @@ extra_movie_roots = ['\\nas\Media\Movies']
 | `mcp_max_plan_gb`, `mcp_max_files`, `mcp_plan_ttl_minutes` | `60`, `60`, `15` | Limits for plans made through the MCP server |
 | `ingest_root`, `plex_url`, `ingest_profile` | (empty), (empty), `samsung-q60b` | See [Ingest](#ingest-make-every-file-play-directly-on-the-tv) |
 | `subtitle_language`, `opensubtitles_username` | `en`, (empty) | See [Subtitles](#subtitles-that-match-the-audio) |
+| `auto_subtitles`, `auto_ingest`, `max_delivery_jobs` | `false`, `false`, `2` | See [After a download](#subtitle-ingest-review) |
 
 ## Development
 
