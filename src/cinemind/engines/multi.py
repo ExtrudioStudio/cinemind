@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cinemind.core.config import Config
 from cinemind.core.models import TorrentJob
@@ -33,11 +33,13 @@ class Engines:
         staging_root: Path,
         listener: EngineListener | None = None,
         poll_interval: float = 0.5,
+        matcher: Any = None,  # passed to the torrent engine (see TorrentEngine.matcher)
     ):
         self.cfg = cfg
         self.staging_root = staging_root
         self.listener = listener
         self.poll_interval = poll_interval
+        self.matcher = matcher
         self.http = HttpEngine(cfg, listener, submit=self.add_job)
         self._torrent: TorrentEngine | None = None
 
@@ -53,7 +55,7 @@ class Engines:
                 ) from exc
             self._torrent = TorrentEngine(self.cfg, self.staging_root, self.listener,
                                           poll_interval=self.poll_interval,
-                                          submit=self.add_job)  # fmt: skip
+                                          submit=self.add_job, matcher=self.matcher)  # fmt: skip
         return self._torrent
 
     @property

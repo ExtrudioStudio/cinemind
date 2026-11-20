@@ -20,6 +20,23 @@ working for this release.
   checks each candidate against the video's speech before saving it. A late subtitle, or one
   timed for 25 fps, is retimed; one for another cut or film is skipped. Saved as UTF-8 SRT
   (Windows-1255 Hebrew is converted). A numpy port of MediaPipeline v1's sync check.
+- **Pack-file judge**: when a torrent's file names don't say which file is the episode (anime
+  numbered across seasons, episode titles only, season folders, two-part finales), a model
+  picks among the torrent's files or says none, instead of the episode being re-planned. It
+  runs on a local model through Ollama by default (`judge_provider`, `judge_model`), or on
+  Claude. The answer is constrained to the files it was shown, and unsure answers count as none.
+- **An eval for it** (`evals/pack_matching/`, [docs/evals.md](docs/evals.md)): 61 reviewed
+  cases run through the production matching code, with wrong picks scored separately, a
+  self-check of the grading, resumable runs, recorded replies, and a harness a person must
+  approve before a model runs. ADR 0006. On the local model (`qwen2.5:7b`), 93% of cases are
+  right, against 33% for the name rules alone, but wrong picks rise from 3.3% to 6.6%. The run
+  is recorded and replayed in the tests.
+- **Checks on the judge's pick**: a file named for another episode is thrown out, and the
+  answer counts as none. That covers another episode code, a season-relative number with no
+  sign of the season, or another episode's title. On the recorded replies, wrong picks fall to
+  0% and correct rises to 97%.
+- The name rules skip decoys (samples, trailers, previews, extras, deleted scenes, creditless
+  openings) that carry an episode's code. A lone sample is no longer downloaded as the episode.
 - **After-download stages** (`auto_subtitles`, `auto_ingest`): each finished file gets a
   subtitle, then is checked, fixed and filed, at most `max_delivery_jobs` at a time next to
   the running downloads. Every step is recorded per file (`state.db` schema v4), so an

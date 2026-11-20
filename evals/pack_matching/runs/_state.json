@@ -1,0 +1,57 @@
+{
+  "flow": "pack-matching",
+  "metrics": [
+    {
+      "id": "correct",
+      "label": "Correct",
+      "kind": "binary"
+    },
+    {
+      "id": "wrong_pick",
+      "label": "Wrong pick",
+      "kind": "binary",
+      "better": "lower"
+    },
+    {
+      "id": "abstained",
+      "label": "Said none",
+      "kind": "binary"
+    }
+  ],
+  "perf_fields": [
+    {
+      "id": "latency_s",
+      "label": "Latency",
+      "unit": "s"
+    },
+    {
+      "id": "in_tokens",
+      "label": "In tokens"
+    },
+    {
+      "id": "out_tokens",
+      "label": "Out tokens"
+    }
+  ],
+  "prices": {
+    "claude-opus-5-5": {
+      "in": 4.0,
+      "out": 20.0
+    },
+    "claude-sonnet-5-5": {
+      "in": 2.0,
+      "out": 10.0
+    },
+    "claude-haiku-5-5": {
+      "in": 0.1,
+      "out": 0.5
+    }
+  },
+  "harness_paths": [
+    "src/cinemind/ai/judge.py",
+    "src/cinemind/ai/llm.py",
+    "src/cinemind/ai/ollama.py",
+    "src/cinemind/planning/matching.py"
+  ],
+  "harness_sha": "a793c97725ddb5f58e12ee46e2d556224e1004040002c9367a6bfddf4c5d56ce"
+}

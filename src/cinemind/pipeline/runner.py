@@ -16,6 +16,7 @@ from pathlib import Path
 
 from rich.live import Live
 
+from cinemind.ai.judge import judge_from_config
 from cinemind.cli.ui import console, delivery_line, progress_table
 from cinemind.core.config import Config, data_dir
 from cinemind.core.models import FileTarget, TorrentJob
@@ -24,6 +25,7 @@ from cinemind.engines.base import NOT_IN_TORRENT, JobView
 from cinemind.engines.multi import Engines
 from cinemind.pipeline.delivery import Delivery
 from cinemind.pipeline.postprocess import hand_off, new_batch
+from cinemind.planning.matching import PackFile, Wanted, resolve
 from cinemind.planning.planner import Plan, replan
 
 log = logging.getLogger(__name__)
@@ -37,7 +39,9 @@ class DownloadRunner:
         self.store = store
         self.job_id = job_id
         self.plan = plan
-        self.engine = Engines(cfg, data_dir() / "staging", listener=self)
+        self.judge = judge_from_config(cfg, store)  # for files the names don't place
+        self.engine = Engines(cfg, data_dir() / "staging", listener=self,
+                              matcher=self.match_files if self.judge else None)  # fmt: skip
         self.handed_off: list[Path] = []  # files given to cfg.post_download_command
         self.batch = new_batch("job", job_id)  # this run's files form one batch for that command
         self.batch_size = sum(len(job.targets) for job in plan.jobs)
@@ -49,6 +53,26 @@ class DownloadRunner:
             self.delivery = Delivery(cfg, store, job_id, plan.title,
                                      on_delivered=self._after_delivery,
                                      on_update=self._show_delivery)  # fmt: skip
+
+    async def match_files(self, job: TorrentJob, targets: list[FileTarget],
+                          files: list[PackFile]) -> list[int | None]:  # fmt: skip
+        """The torrent engine's matcher: the same :func:`resolve` the pack-matching eval
+        measures, for each target the name rules couldn't place, one at a time."""
+        chosen: list[int | None] = []
+        free = list(files)
+        for target in targets:
+            wanted = Wanted.from_title(self.plan.title, target.refs, job.release)
+            found = await resolve(wanted, free, self.judge, target.candidate.filename,
+                                  target.file_idx)  # fmt: skip
+            if found.how == "judge":
+                log.info("Judge placed %s in %s: %s (%s)", target.label, job.release,
+                         found.index, found.reason)  # fmt: skip
+            elif found.rejected:
+                log.info("Judge's pick for %s in %s thrown out: %s", target.label, job.release,
+                         found.rejected)  # fmt: skip
+            chosen.append(found.index)
+            free = [f for f in free if f.index != found.index]
+        return chosen
 
     # -- EngineListener --------------------------------------------------------------------
 

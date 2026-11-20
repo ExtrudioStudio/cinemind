@@ -120,8 +120,10 @@ Windows path; use `@4k`, `-q 4k` or plain `4k` there. PowerShell and cmd are fin
 
 ## AI features
 
-Both need Anthropic API credentials: `ANTHROPIC_API_KEY`, or `ant auth login`. Without them
-everything else works, and the selection syntax above still does.
+Plain-language requests and the MCP server's `plan_request` use Claude, which needs Anthropic
+API credentials (`ANTHROPIC_API_KEY`, or `ant auth login`). The pack-file judge runs on a
+local model by default. Without any of them everything else works, and the selection syntax
+above still does.
 
 ### Plain-language requests
 
@@ -141,6 +143,42 @@ title's real season list. The result is checked by the same parser and shown as 
 syntax ("Read as ..."), so you can see and reuse exactly what it understood. Every call is
 logged with its token usage in `state.db` (`llm_calls`). The model is `llm_model`
 (`claude-opus-5-5` by default, at `llm_effort` `low`).
+
+### Which file is the episode? The pack-file judge
+
+Sources usually say which file of a season pack is which episode. When they don't, cinemind
+reads the file names: `S01E05`, `1x05`. Anime batches numbered across seasons
+(`[Group] Show - 29 [1080p].mkv` for S02E05), files named only by the episode's title, season
+folders (`Season 2/05.mkv`) and two-part finales released under one number all defeat that.
+Before, the episode was dropped and re-planned onto another release.
+
+Now those files go to a judge. It sees the episode wanted (with its title and its absolute
+number), the torrent's name and its files, and it can only answer with one of those files or
+"none": the answer's schema is an enum of their ids. An unsure answer counts as no answer,
+because a wrong file downloads the wrong episode, while no file only costs a re-plan. The names
+reach the model as data in a JSON document, never as instructions. The files it has placed
+download meanwhile.
+
+```powershell
+# local and free (the default): install Ollama, then
+ollama pull qwen2.5:7b
+cinemind config set judge_provider anthropic    # or Claude (llm_model), or "off"
+```
+
+How well it works is measured, not assumed. [The eval](docs/evals.md) runs 61 reviewed cases
+through the same code the engine uses, and scores wrong picks separately from misses:
+
+| | correct | wrong picks | present episodes found |
+|---|---|---|---|
+| name rules only | 33% | 3.3% | 20% |
+| + judge on `qwen2.5:7b` (local) | 93% | 6.6% | 96% |
+| + checks on the judge's pick | 97% | 0% | 96% |
+
+The judge's wrong picks were near misses, all answered with high confidence: a special taken
+for S01E01, and a shorter title taken for the full one. So its pick is checked against what the
+file's name already says. A file named for another episode is thrown out: a different episode
+code, a season-relative number with no sign of the season, or another episode's title. The
+checks were written after seeing those misses, and the eval says so.
 
 ### Use from an AI assistant (MCP)
 
@@ -365,6 +403,8 @@ extra_movie_roots = ['\\nas\Media\Movies']
 | `seed_ratio` | `0` | Seed after finishing until this upload ratio |
 | `outgoing_interfaces` | (empty) | Bind torrents to a VPN adapter so traffic can't leak |
 | `llm_enabled`, `llm_model`, `llm_effort` | `true`, `claude-opus-5-5`, `low` | Plain-language requests |
+| `judge_provider`, `judge_model`, `ollama_url` | `ollama`, `qwen2.5:7b`, `http://localhost:11434` | The [pack-file judge](#which-file-is-the-episode-the-pack-file-judge) (`anthropic` uses `llm_model`; `off`) |
+| `judge_min_confidence` | `medium` | Below this the judge abstains |
 | `mcp_max_plan_gb`, `mcp_max_files`, `mcp_plan_ttl_minutes` | `60`, `60`, `15` | Limits for plans made through the MCP server |
 | `ingest_root`, `plex_url`, `ingest_profile` | (empty), (empty), `samsung-q60b` | See [Ingest](#ingest-make-every-file-play-directly-on-the-tv) |
 | `subtitle_language`, `opensubtitles_username` | `en`, (empty) | See [Subtitles](#subtitles-that-match-the-audio) |

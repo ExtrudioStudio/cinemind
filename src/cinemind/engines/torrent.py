@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import shutil
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -35,6 +34,7 @@ from cinemind.engines.base import (
     Submit,
     TargetView,
 )
+from cinemind.planning.matching import PackFile, locate
 from cinemind.planning.streams import VIDEO_EXTS
 
 log = logging.getLogger(__name__)
@@ -79,13 +79,16 @@ def _is_video(path: str) -> bool:
     return PurePosixPath(path.replace("\\", "/")).suffix.lower() in VIDEO_EXTS
 
 
-def _matches_refs(name: str, target: FileTarget) -> bool:
-    for ref in target.refs:
-        s, e = ref.season, ref.episode
-        pattern = rf"(?:s0*{s}[\s._-]*e0*{e}|(?<!\d){s}x0*{e})(?!\d)"
-        if not re.search(pattern, name, re.I):
-            return False
-    return bool(target.refs)
+def _free_files(paths: list[str], sizes: list[int], usable: list[int],
+                taken: set[int]) -> list[PackFile]:  # fmt: skip
+    # "/" on every platform, as the name rules, the judge and the eval cases expect
+    return [PackFile(i, paths[i].replace("\\", "/"), sizes[i]) for i in usable if i not in taken]
+
+
+# The torrent, the targets to place, and its free video files -> a file index (or None) each.
+Matcher = Callable[
+    [TorrentJob, list[FileTarget], list[PackFile]], Coroutine[Any, Any, list[int | None]]
+]
 
 
 @dataclass
@@ -100,6 +103,9 @@ class _Active:
     failed: set[int] = field(default_factory=set)  # finished, but the final rename failed
     renaming: dict[int, tuple[int, float]] = field(default_factory=dict)  # idx -> (tries, next)
     unmapped: list[FileTarget] = field(default_factory=list)
+    undecided: list[FileTarget] = field(default_factory=list)  # waiting for the matcher
+    matching: asyncio.Task[list[int | None]] | None = None
+    matching_targets: list[FileTarget] = field(default_factory=list)
     last_done: int = -1
     progress: list[int] = field(default_factory=list)
     status: Any = None
@@ -123,11 +129,15 @@ class TorrentEngine(ListenerMixin):
         rename_attempts: int = RENAME_ATTEMPTS,
         rename_retry_delay: float = RENAME_RETRY_DELAY,
         submit: Submit | None = None,
+        matcher: Matcher | None = None,
     ):
         self.cfg = cfg
         self.staging_root = staging_root
         self.listener = listener
         self.poll_interval = poll_interval
+        # Decides the files the name rules couldn't (see cinemind.planning.matching); while it
+        # works, the torrent downloads the files that were decided.
+        self.matcher = matcher
         self.rename_attempts = rename_attempts
         self.rename_retry_delay = rename_retry_delay
         # Where replacement jobs go. Engines routes them, so a dead torrent can fall back to
@@ -185,6 +195,7 @@ class TorrentEngine(ListenerMixin):
             if active.state != "metadata":
                 self._map_targets(active, job.targets)
                 self._apply_priorities(active)
+                self._start_matching(active)
             return
         for queued, _ in self.pending:
             if queued.info_hash == job.info_hash:
@@ -219,25 +230,8 @@ class TorrentEngine(ListenerMixin):
 
     # -- metadata --------------------------------------------------------------------------
 
-    def _locate(self, target: FileTarget, paths: list[str], sizes: list[int],
-                usable: list[int], taken: set[int]) -> int | None:  # fmt: skip
-        free = [i for i in usable if i not in taken]
-        want = _basename(target.candidate.filename).lower() if target.candidate.filename else ""
-        idx = target.file_idx
-        if idx is not None and idx in free:
-            name = _basename(paths[idx])
-            if not want or name.lower() == want or _matches_refs(name, target):
-                return idx
-        if want:
-            for i in free:
-                if _basename(paths[i]).lower() == want:
-                    return i
-        if target.refs:
-            hits = [i for i in free if _matches_refs(_basename(paths[i]), target)]
-            return max(hits, key=lambda i: sizes[i]) if hits else None
-        return max(free, key=lambda i: sizes[i]) if free else None  # a movie: biggest video
-
-    def _map_targets(self, a: _Active, targets: list[FileTarget]) -> None:
+    def _files(self, a: _Active) -> tuple[list[str], list[int], list[int]]:
+        """The torrent's paths, sizes and usable (video, not padding) file indexes."""
         files = _layout(a.handle.torrent_file())  # original names matter on resume
         count = files.num_files()
         paths = [files.file_path(i) for i in range(count)]
@@ -246,25 +240,73 @@ class TorrentEngine(ListenerMixin):
         usable = [
             i for i in range(count) if not files.file_flags(i) & pad_flag and _is_video(paths[i])
         ]
+        return paths, sizes, usable
+
+    def _map_targets(self, a: _Active, targets: list[FileTarget]) -> None:
+        """Place each target by the name rules. What they can't settle (no file, or an
+        ambiguous match) waits for the matcher when there is one."""
+        paths, sizes, usable = self._files(a)
         for target in targets:
-            idx = self._locate(target, paths, sizes, usable, set(a.mapping))
-            if idx is None:
-                a.unmapped.append(target)
-                log.warning(
-                    "%s: no file for %s in %s", a.job.info_hash, target.label, a.job.release
-                )
+            found = locate(target.refs, _free_files(paths, sizes, usable, set(a.mapping)),
+                           target.candidate.filename, target.file_idx)  # fmt: skip
+            if self.matcher is not None and target.refs and found.how in ("none", "ambiguous"):
+                a.undecided.append(target)
                 continue
-            ext = PurePosixPath(paths[idx].replace("\\", "/")).suffix.lower()
-            target.final_path = target.final_path.with_suffix(ext)
-            target.file_idx = idx
-            target.size = sizes[idx]
-            a.mapping[idx] = target
-            target.final_path.parent.mkdir(parents=True, exist_ok=True)
-            if target.final_path.exists() and target.final_path.stat().st_size == sizes[idx]:
-                a.handle.rename_file(idx, str(target.final_path))  # finished on a previous run
-                a.done.add(idx)
-            else:
-                a.handle.rename_file(idx, str(target.final_path) + ".part")
+            self._place(a, target, found.index, paths, sizes)
+
+    def _place(self, a: _Active, target: FileTarget, idx: int | None, paths: list[str],
+               sizes: list[int]) -> None:  # fmt: skip
+        if idx is None:
+            a.unmapped.append(target)
+            log.warning("%s: no file for %s in %s", a.job.info_hash, target.label, a.job.release)
+            return
+        ext = PurePosixPath(paths[idx].replace("\\", "/")).suffix.lower()
+        target.final_path = target.final_path.with_suffix(ext)
+        target.file_idx = idx
+        target.size = sizes[idx]
+        a.mapping[idx] = target
+        target.final_path.parent.mkdir(parents=True, exist_ok=True)
+        if target.final_path.exists() and target.final_path.stat().st_size == sizes[idx]:
+            a.handle.rename_file(idx, str(target.final_path))  # finished on a previous run
+            a.done.add(idx)
+        else:
+            a.handle.rename_file(idx, str(target.final_path) + ".part")
+
+    def _start_matching(self, a: _Active) -> None:
+        """Hand the undecided targets to the matcher, unless it is busy with this torrent."""
+        if not a.undecided or a.matching is not None or self.matcher is None:
+            return
+        paths, sizes, usable = self._files(a)
+        targets, a.undecided = a.undecided, []
+        free = _free_files(paths, sizes, usable, set(a.mapping))
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # driven without an event loop: the name rules' answer stands
+            for target in targets:
+                found = locate(target.refs, _free_files(paths, sizes, usable, set(a.mapping)),
+                               target.candidate.filename, target.file_idx)  # fmt: skip
+                self._place(a, target, found.index, paths, sizes)
+            return
+        a.matching_targets = targets
+        a.matching = loop.create_task(self.matcher(a.job, targets, free))
+
+    def _apply_matches(self, a: _Active, now: float) -> None:
+        """Place the targets the matcher decided; the rest are re-planned."""
+        task, targets = a.matching, a.matching_targets
+        a.matching, a.matching_targets = None, []
+        assert task is not None
+        try:
+            chosen = task.result()
+        except Exception:  # a matcher bug must not stop the torrent
+            log.exception("Matching files in %s failed", a.job.info_hash)
+            chosen = [None] * len(targets)
+        paths, sizes, usable = self._files(a)
+        for target, idx in zip(targets, chosen, strict=False):
+            if idx is not None and (idx in a.mapping or idx not in usable):
+                idx = None  # taken meanwhile, or not a video of this torrent
+            self._place(a, target, idx, paths, sizes)
+        self._settle(a, now)
+        self._start_matching(a)  # targets added while it worked
 
     def _apply_priorities(self, a: _Active) -> None:
         count = a.handle.torrent_file().num_files()
@@ -275,12 +317,21 @@ class TorrentEngine(ListenerMixin):
 
     def _on_metadata(self, a: _Active, now: float) -> None:
         self._map_targets(a, list(a.job.targets))
+        self._start_matching(a)
+        self._settle(a, now)
+
+    def _settle(self, a: _Active, now: float) -> None:
+        """Download what's placed, re-plan what isn't, and wait for what's being matched."""
         if not a.mapping:
+            if a.matching is not None:
+                a.state = "matching"  # nothing to download until the matcher decides
+                return
             self._kill(a, "none of the wanted files are in this torrent")
             return
         self._apply_priorities(a)
-        a.state = "downloading"
-        a.last_progress_at = now
+        if a.state in ("metadata", "matching"):
+            a.state = "downloading"
+            a.last_progress_at = now
         if a.unmapped:
             # Re-plan the episodes this torrent turned out not to contain.
             missing, a.unmapped = a.unmapped, []
@@ -302,6 +353,12 @@ class TorrentEngine(ListenerMixin):
             elif now - a.added_at > self.cfg.metadata_timeout:
                 self._kill(a, f"no metadata after {self.cfg.metadata_timeout}s (dead swarm?)")
             return
+        if a.matching is not None and a.matching.done():
+            self._apply_matches(a, now)
+            if a.job.info_hash not in self.active:
+                return  # killed: none of the files was there
+        if a.state == "matching":
+            return
 
         a.progress = list(a.handle.file_progress(lt.torrent_handle.piece_granularity))
         done_bytes = sum(min(a.progress[i], t.size) for i, t in a.mapping.items())
@@ -322,7 +379,7 @@ class TorrentEngine(ListenerMixin):
                 a.handle.rename_file(idx, str(target.final_path))
                 a.renaming[idx] = (tries + 1, 0.0)  # next_at 0 = waiting for the alert
 
-        if len(a.done) == len(a.mapping) and not a.renaming:
+        if len(a.done) == len(a.mapping) and not a.renaming and a.matching is None:
             if self.cfg.seed_ratio > 0 and a.state != "seeding":
                 a.state = "seeding"
             if a.state == "seeding":
@@ -400,6 +457,9 @@ class TorrentEngine(ListenerMixin):
 
     def _kill(self, a: _Active, reason: str) -> None:
         log.warning("Giving up on %s (%s): %s", a.job.info_hash, a.job.release, reason)
+        if a.matching is not None:
+            a.matching.cancel()
+            a.matching = None
         remaining = a.remaining
         self._drop(a)
         for target in remaining:
@@ -469,6 +529,10 @@ class TorrentEngine(ListenerMixin):
 
     def shutdown(self, save_resume: bool = True) -> None:
         """Pause everything, save resume data for unfinished torrents and close the session."""
+        for a in self.active.values():
+            if a.matching is not None:  # the targets stay in the job, matched again on resume
+                a.matching.cancel()
+                a.matching = None
         if self._ses is None:
             return
         self._ses.pause()

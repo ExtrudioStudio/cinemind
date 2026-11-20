@@ -249,3 +249,55 @@ async def test_a_file_that_cannot_be_renamed_is_reported_failed(tmp_path, seeder
     assert "could not rename" in rec.failed[0][1]
     (view,) = engine.snapshot()
     assert view.targets[0].state == "failed"
+
+
+# -- files the names don't place: the matcher -------------------------------------------------
+
+
+def _matched_engine(tmp_path: Path, listener, matcher) -> TorrentEngine:
+    config = Config(metadata_timeout=20, stall_timeout=30)
+    return TorrentEngine(config, tmp_path / "staging", listener, poll_interval=0.1,
+                         settings=LOCAL, matcher=matcher)  # fmt: skip
+
+
+async def test_a_file_the_names_dont_place_is_downloaded_from_the_matchers_pick(tmp_path, seeder):
+    library = tmp_path / "library"
+    seen = []
+
+    async def matcher(job, targets, files):
+        seen.append(([t.label for t in targets], sorted(f.path.rsplit("/", 1)[-1] for f in files)))
+        await asyncio.sleep(0.2)  # a model takes a moment; nothing breaks meanwhile
+        return [next(f.index for f in files if f.path.endswith("Show.S01E02.1080p.WEB.mkv"))]
+
+    rec = Recorder()
+    engine = _matched_engine(tmp_path, rec, matcher)
+    engine.add_job(_job(seeder, library, 7, None))  # S01E07: no file in the torrent says so
+    await asyncio.wait_for(engine.run(), 60)
+    engine.shutdown()
+
+    final = library / "Show" / "Season 01" / "Show - S01E07 - Pilot.mkv"
+    assert final.read_bytes() == (seeder["content"] / "Show.S01E02.1080p.WEB.mkv").read_bytes()
+    # The matcher saw the torrent's videos (the readme isn't one), and nothing was re-planned.
+    assert seen == [(["S01E07"], ["Show.S01E01.1080p.WEB.mkv", "Show.S01E02.1080p.WEB.mkv",
+                                  "sample.mkv"])]  # fmt: skip
+    assert rec.jobs_done == [seeder["info_hash"]] and rec.dead == []
+
+
+async def test_when_the_matcher_finds_nothing_that_episode_is_replanned(tmp_path, seeder):
+    library = tmp_path / "library"
+
+    async def matcher(job, targets, files):
+        return [None] * len(targets)
+
+    placed = _job(seeder, library, 1, None)  # S01E01: the name says so
+    missing = _job(seeder, library, 7, None).targets[0]
+    placed.targets.append(missing)
+    rec = Recorder()
+    engine = _matched_engine(tmp_path, rec, matcher)
+    engine.add_job(placed)
+    await asyncio.wait_for(engine.run(), 60)
+    engine.shutdown()
+
+    assert (library / "Show" / "Season 01" / "Show - S01E01 - Pilot.mkv").exists()
+    assert rec.done == ["S01E01"] and rec.dead == [(seeder["info_hash"], "file not in torrent")]
+    assert not (library / "Show" / "Season 01" / "Show - S01E07 - Pilot.mkv").exists()

@@ -190,6 +190,15 @@ class Config(BaseModel):
     llm_model: str = "claude-opus-5-5"
     llm_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
 
+    # The pack-file judge: when a torrent's file names don't say which file is the episode
+    # (anime numbered across seasons, episode titles only), a model picks among the files or
+    # says none. "ollama" runs a local model: free and offline (install Ollama, then
+    # `ollama pull <judge_model>`). "anthropic" uses llm_model. "off": the name rules only.
+    judge_provider: Literal["ollama", "anthropic", "off"] = "ollama"
+    judge_model: str = "qwen2.5:7b"  # the Ollama model
+    ollama_url: str = "http://localhost:11434"
+    judge_min_confidence: Literal["high", "medium"] = "medium"  # below this, the judge abstains
+
     # The MCP server (`cinemind mcp`): limits on what one agent-made plan may download, and how
     # long a plan stays valid before start_download refuses it.
     mcp_max_plan_gb: float = 60.0

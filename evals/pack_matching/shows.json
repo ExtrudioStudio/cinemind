@@ -1,0 +1,802 @@
+{
+ "harbor-lights": {
+  "name": "Harbor Lights",
+  "year": 2016,
+  "episodes": [
+   {
+    "season": 1,
+    "episode": 1,
+    "title": "The Wild Storm"
+   },
+   {
+    "season": 1,
+    "episode": 2,
+    "title": "The Crooked Station"
+   },
+   {
+    "season": 1,
+    "episode": 3,
+    "title": "The Golden Tide"
+   },
+   {
+    "season": 1,
+    "episode": 4,
+    "title": "The Burning Debt"
+   },
+   {
+    "season": 1,
+    "episode": 5,
+    "title": "The Broken Map"
+   },
+   {
+    "season": 1,
+    "episode": 6,
+    "title": "The Midnight Harbor"
+   },
+   {
+    "season": 1,
+    "episode": 7,
+    "title": "The Salt Storm"
+   },
+   {
+    "season": 1,
+    "episode": 8,
+    "title": "The Iron Lantern"
+   },
+   {
+    "season": 1,
+    "episode": 9,
+    "title": "The Hidden Recipe"
+   },
+   {
+    "season": 1,
+    "episode": 10,
+    "title": "The Distant Promise"
+   },
+   {
+    "season": 2,
+    "episode": 1,
+    "title": "The Quiet Storm"
+   },
+   {
+    "season": 2,
+    "episode": 2,
+    "title": "The Crooked Letter"
+   },
+   {
+    "season": 2,
+    "episode": 3,
+    "title": "The Broken Station"
+   },
+   {
+    "season": 2,
+    "episode": 4,
+    "title": "The Hidden Tide"
+   },
+   {
+    "season": 2,
+    "episode": 5,
+    "title": "The Wild Signal"
+   },
+   {
+    "season": 2,
+    "episode": 6,
+    "title": "The Midnight Ledger"
+   },
+   {
+    "season": 2,
+    "episode": 7,
+    "title": "The Distant Engine"
+   },
+   {
+    "season": 2,
+    "episode": 8,
+    "title": "The Gentle Storm"
+   },
+   {
+    "season": 2,
+    "episode": 9,
+    "title": "The Last Shift"
+   },
+   {
+    "season": 2,
+    "episode": 10,
+    "title": "The Lucky Tide"
+   },
+   {
+    "season": 3,
+    "episode": 1,
+    "title": "The Hollow Ledger"
+   },
+   {
+    "season": 3,
+    "episode": 2,
+    "title": "The Bright Letter"
+   },
+   {
+    "season": 3,
+    "episode": 3,
+    "title": "The Midnight Signal"
+   },
+   {
+    "season": 3,
+    "episode": 4,
+    "title": "The Open Compass"
+   },
+   {
+    "season": 3,
+    "episode": 5,
+    "title": "The Second Compass"
+   },
+   {
+    "season": 3,
+    "episode": 6,
+    "title": "The Last Storm"
+   },
+   {
+    "season": 3,
+    "episode": 7,
+    "title": "The Crooked Thaw"
+   },
+   {
+    "season": 3,
+    "episode": 8,
+    "title": "The Silver Door"
+   },
+   {
+    "season": 3,
+    "episode": 9,
+    "title": "The Paper Engine"
+   },
+   {
+    "season": 3,
+    "episode": 10,
+    "title": "The Silver Recipe"
+   }
+  ]
+ },
+ "star-courier-rin": {
+  "name": "Star Courier Rin",
+  "year": 2019,
+  "episodes": [
+   {
+    "season": 0,
+    "episode": 1,
+    "title": "OVA: The Lost Parcel"
+   },
+   {
+    "season": 0,
+    "episode": 2,
+    "title": "OVA: Return Route"
+   },
+   {
+    "season": 1,
+    "episode": 1,
+    "title": "The Midnight Harbor"
+   },
+   {
+    "season": 1,
+    "episode": 2,
+    "title": "The Wild Door"
+   },
+   {
+    "season": 1,
+    "episode": 3,
+    "title": "The Paper Station"
+   },
+   {
+    "season": 1,
+    "episode": 4,
+    "title": "The Broken Lantern"
+   },
+   {
+    "season": 1,
+    "episode": 5,
+    "title": "The Paper Crossing"
+   },
+   {
+    "season": 1,
+    "episode": 6,
+    "title": "The Second Signal"
+   },
+   {
+    "season": 1,
+    "episode": 7,
+    "title": "The Crooked Engine"
+   },
+   {
+    "season": 1,
+    "episode": 8,
+    "title": "The Iron Current"
+   },
+   {
+    "season": 1,
+    "episode": 9,
+    "title": "The Wild Orchard"
+   },
+   {
+    "season": 1,
+    "episode": 10,
+    "title": "The Lucky Tide"
+   },
+   {
+    "season": 1,
+    "episode": 11,
+    "title": "The Narrow Letter"
+   },
+   {
+    "season": 1,
+    "episode": 12,
+    "title": "The Paper Lantern"
+   },
+   {
+    "season": 1,
+    "episode": 13,
+    "title": "The Salt Letter"
+   },
+   {
+    "season": 1,
+    "episode": 14,
+    "title": "The Narrow Signal"
+   },
+   {
+    "season": 1,
+    "episode": 15,
+    "title": "The Quiet Garden"
+   },
+   {
+    "season": 1,
+    "episode": 16,
+    "title": "The Hollow Station"
+   },
+   {
+    "season": 1,
+    "episode": 17,
+    "title": "The Restless Tide"
+   },
+   {
+    "season": 1,
+    "episode": 18,
+    "title": "The Hidden Garden"
+   },
+   {
+    "season": 1,
+    "episode": 19,
+    "title": "The Bitter Thaw"
+   },
+   {
+    "season": 1,
+    "episode": 20,
+    "title": "The Distant Harbor"
+   },
+   {
+    "season": 1,
+    "episode": 21,
+    "title": "The Second Thaw"
+   },
+   {
+    "season": 1,
+    "episode": 22,
+    "title": "The Silver Current"
+   },
+   {
+    "season": 1,
+    "episode": 23,
+    "title": "The Broken Parcel"
+   },
+   {
+    "season": 1,
+    "episode": 24,
+    "title": "The Salt Debt"
+   },
+   {
+    "season": 2,
+    "episode": 1,
+    "title": "The Last Tide"
+   },
+   {
+    "season": 2,
+    "episode": 2,
+    "title": "The Hollow Signal"
+   },
+   {
+    "season": 2,
+    "episode": 3,
+    "title": "The Empty Recipe"
+   },
+   {
+    "season": 2,
+    "episode": 4,
+    "title": "The Quiet Promise"
+   },
+   {
+    "season": 2,
+    "episode": 5,
+    "title": "Signal Lost"
+   },
+   {
+    "season": 2,
+    "episode": 6,
+    "title": "The Paper Map"
+   },
+   {
+    "season": 2,
+    "episode": 7,
+    "title": "The Broken Engine"
+   },
+   {
+    "season": 2,
+    "episode": 8,
+    "title": "The Crooked Crossing"
+   },
+   {
+    "season": 2,
+    "episode": 9,
+    "title": "The Bright Garden"
+   },
+   {
+    "season": 2,
+    "episode": 10,
+    "title": "The Restless Window"
+   },
+   {
+    "season": 2,
+    "episode": 11,
+    "title": "The Second Door"
+   },
+   {
+    "season": 2,
+    "episode": 12,
+    "title": "The Empty Map"
+   },
+   {
+    "season": 2,
+    "episode": 13,
+    "title": "The Quiet Window"
+   },
+   {
+    "season": 2,
+    "episode": 14,
+    "title": "The Last Promise"
+   },
+   {
+    "season": 2,
+    "episode": 15,
+    "title": "The Second Thaw"
+   },
+   {
+    "season": 2,
+    "episode": 16,
+    "title": "The Broken Bridge"
+   },
+   {
+    "season": 2,
+    "episode": 17,
+    "title": "The Gentle Compass"
+   },
+   {
+    "season": 2,
+    "episode": 18,
+    "title": "The Hidden Promise"
+   },
+   {
+    "season": 2,
+    "episode": 19,
+    "title": "The Wild Letter"
+   },
+   {
+    "season": 2,
+    "episode": 20,
+    "title": "The Iron Recipe"
+   },
+   {
+    "season": 2,
+    "episode": 21,
+    "title": "The Midnight Feast"
+   },
+   {
+    "season": 2,
+    "episode": 22,
+    "title": "The Narrow Garden"
+   },
+   {
+    "season": 2,
+    "episode": 23,
+    "title": "The Empty Promise"
+   },
+   {
+    "season": 2,
+    "episode": 24,
+    "title": "The Crooked Current"
+   },
+   {
+    "season": 3,
+    "episode": 1,
+    "title": "The Broken Engine"
+   },
+   {
+    "season": 3,
+    "episode": 2,
+    "title": "The Second Storm"
+   },
+   {
+    "season": 3,
+    "episode": 3,
+    "title": "The Hollow Thaw"
+   },
+   {
+    "season": 3,
+    "episode": 4,
+    "title": "The Crooked Window"
+   },
+   {
+    "season": 3,
+    "episode": 5,
+    "title": "The Second Door"
+   },
+   {
+    "season": 3,
+    "episode": 6,
+    "title": "The Wild Debt"
+   },
+   {
+    "season": 3,
+    "episode": 7,
+    "title": "The Salt Harbor"
+   },
+   {
+    "season": 3,
+    "episode": 8,
+    "title": "The Midnight Crossing"
+   },
+   {
+    "season": 3,
+    "episode": 9,
+    "title": "The Golden Feast"
+   },
+   {
+    "season": 3,
+    "episode": 10,
+    "title": "The Last Map"
+   },
+   {
+    "season": 3,
+    "episode": 11,
+    "title": "The Hidden Lantern"
+   },
+   {
+    "season": 3,
+    "episode": 12,
+    "title": "The Wild Harbor"
+   },
+   {
+    "season": 3,
+    "episode": 13,
+    "title": "The Hidden Bridge"
+   }
+  ]
+ },
+ "quiet-orchard": {
+  "name": "The Quiet Orchard",
+  "year": 2021,
+  "episodes": [
+   {
+    "season": 1,
+    "episode": 1,
+    "title": "The Well"
+   },
+   {
+    "season": 1,
+    "episode": 2,
+    "title": "Frost on the Branches"
+   },
+   {
+    "season": 1,
+    "episode": 3,
+    "title": "What the Bees Know"
+   },
+   {
+    "season": 1,
+    "episode": 4,
+    "title": "Grafting"
+   },
+   {
+    "season": 1,
+    "episode": 5,
+    "title": "The Long Harvest"
+   },
+   {
+    "season": 1,
+    "episode": 6,
+    "title": "The Well's Edge"
+   },
+   {
+    "season": 1,
+    "episode": 7,
+    "title": "Windfall"
+   },
+   {
+    "season": 1,
+    "episode": 8,
+    "title": "Rootstock"
+   }
+  ]
+ },
+ "copper-and-vine": {
+  "name": "Copper & Vine",
+  "year": 2014,
+  "episodes": [
+   {
+    "season": 0,
+    "episode": 1,
+    "title": "Christmas at the Vineyard"
+   },
+   {
+    "season": 0,
+    "episode": 2,
+    "title": "Behind the Vines"
+   },
+   {
+    "season": 1,
+    "episode": 1,
+    "title": "The Gentle Harbor"
+   },
+   {
+    "season": 1,
+    "episode": 2,
+    "title": "The Iron Letter"
+   },
+   {
+    "season": 1,
+    "episode": 3,
+    "title": "The Bitter Station"
+   },
+   {
+    "season": 1,
+    "episode": 4,
+    "title": "The Bright Promise"
+   },
+   {
+    "season": 1,
+    "episode": 5,
+    "title": "The Salt Bridge"
+   },
+   {
+    "season": 1,
+    "episode": 6,
+    "title": "The Restless Map"
+   },
+   {
+    "season": 1,
+    "episode": 7,
+    "title": "The Hollow Storm"
+   },
+   {
+    "season": 1,
+    "episode": 8,
+    "title": "The Wild Crossing"
+   },
+   {
+    "season": 1,
+    "episode": 9,
+    "title": "The Lucky Crossing"
+   },
+   {
+    "season": 1,
+    "episode": 10,
+    "title": "The Bitter Shift"
+   },
+   {
+    "season": 1,
+    "episode": 11,
+    "title": "The Salt Recipe"
+   },
+   {
+    "season": 1,
+    "episode": 12,
+    "title": "The Bright Parcel"
+   },
+   {
+    "season": 2,
+    "episode": 1,
+    "title": "The Quiet Engine"
+   },
+   {
+    "season": 2,
+    "episode": 2,
+    "title": "The Quiet Ledger"
+   },
+   {
+    "season": 2,
+    "episode": 3,
+    "title": "The Iron Harbor"
+   },
+   {
+    "season": 2,
+    "episode": 4,
+    "title": "The Silver Debt"
+   },
+   {
+    "season": 2,
+    "episode": 5,
+    "title": "The Broken Door"
+   },
+   {
+    "season": 2,
+    "episode": 6,
+    "title": "The Quiet Shift"
+   },
+   {
+    "season": 2,
+    "episode": 7,
+    "title": "The Crooked Tide"
+   },
+   {
+    "season": 2,
+    "episode": 8,
+    "title": "The Distant Map"
+   },
+   {
+    "season": 2,
+    "episode": 9,
+    "title": "The Distant Tide"
+   },
+   {
+    "season": 2,
+    "episode": 10,
+    "title": "The Bright Recipe"
+   },
+   {
+    "season": 2,
+    "episode": 11,
+    "title": "The Lucky Compass"
+   },
+   {
+    "season": 2,
+    "episode": 12,
+    "title": "The Restless Crossing"
+   },
+   {
+    "season": 3,
+    "episode": 1,
+    "title": "The Bright Signal"
+   },
+   {
+    "season": 3,
+    "episode": 2,
+    "title": "The Golden Signal"
+   },
+   {
+    "season": 3,
+    "episode": 3,
+    "title": "The Burning Bridge"
+   },
+   {
+    "season": 3,
+    "episode": 4,
+    "title": "The Wild Station"
+   },
+   {
+    "season": 3,
+    "episode": 5,
+    "title": "The Quiet Window"
+   },
+   {
+    "season": 3,
+    "episode": 6,
+    "title": "The Gentle Harbor"
+   },
+   {
+    "season": 3,
+    "episode": 7,
+    "title": "The Open Recipe"
+   },
+   {
+    "season": 3,
+    "episode": 8,
+    "title": "The Salt Engine"
+   },
+   {
+    "season": 3,
+    "episode": 9,
+    "title": "The Lucky Station"
+   },
+   {
+    "season": 3,
+    "episode": 10,
+    "title": "Reckoning (1)"
+   },
+   {
+    "season": 3,
+    "episode": 11,
+    "title": "Reckoning (2)"
+   }
+  ]
+ },
+ "night-shift-kitchen": {
+  "name": "Night Shift Kitchen",
+  "year": 2020,
+  "episodes": [
+   {
+    "season": 1,
+    "episode": 1,
+    "title": "The Open Ledger"
+   },
+   {
+    "season": 1,
+    "episode": 2,
+    "title": "The Bright Engine"
+   },
+   {
+    "season": 1,
+    "episode": 3,
+    "title": "The Hollow Ledger"
+   },
+   {
+    "season": 1,
+    "episode": 4,
+    "title": "The Paper Station"
+   },
+   {
+    "season": 1,
+    "episode": 5,
+    "title": "The Second Letter"
+   },
+   {
+    "season": 1,
+    "episode": 6,
+    "title": "The Broken Feast"
+   },
+   {
+    "season": 1,
+    "episode": 7,
+    "title": "The Bright Tide"
+   },
+   {
+    "season": 1,
+    "episode": 8,
+    "title": "The Second Promise"
+   },
+   {
+    "season": 2,
+    "episode": 1,
+    "title": "The Salt Map"
+   },
+   {
+    "season": 2,
+    "episode": 2,
+    "title": "The Restless Station"
+   },
+   {
+    "season": 2,
+    "episode": 3,
+    "title": "The Silver Shift"
+   },
+   {
+    "season": 2,
+    "episode": 4,
+    "title": "The Gentle Thaw"
+   },
+   {
+    "season": 2,
+    "episode": 5,
+    "title": "The Silver Crossing"
+   },
+   {
+    "season": 2,
+    "episode": 6,
+    "title": "The Second Signal"
+   },
+   {
+    "season": 2,
+    "episode": 7,
+    "title": "Last Service (1)"
+   },
+   {
+    "season": 2,
+    "episode": 8,
+    "title": "Last Service (2)"
+   }
+  ]
+ }
+}
