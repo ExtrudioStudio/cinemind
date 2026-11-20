@@ -976,7 +976,8 @@ def markdown() -> str:
 
 
 if __name__ == "__main__":
-    (HERE / "shows.json").write_text(json.dumps(SHOWS, indent=1) + "\n", encoding="utf-8")
+    shows = json.dumps(SHOWS, indent=1) + "\n"
+    (HERE / "shows.json").write_text(shows, encoding="utf-8", newline="\n")
     with (HERE / "cases.jsonl").open("w", encoding="utf-8", newline="\n") as fh:
         for c in CASES:
             fh.write(json.dumps(c, ensure_ascii=False) + "\n")
